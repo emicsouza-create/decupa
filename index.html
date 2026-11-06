@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decupa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: mesa de edição — monitor + transcrição à esquerda, painel de etapas à direita. Tema escuro fixo (sala de edição). */
+:root{
+  --bg:#121315; --panel:#1a1c1f; --panel2:#222529; --line:#2e3237; --fg:#e9e6e1; --mute:#9a9893;
+  --accent:#f2a93b; --accent-ink:#1a1206; --keep:#5fb88a; --cut:#d9604c; --hes:#c58bd6; --mk:#f2a93b; --rep:#6fa8dc; --rest:#e07b9a; --man:#9a9893;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--body)}
+button,input,select,textarea{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:16px;padding:14px max(16px,env(safe-area-inset-right,0px)) 14px max(16px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--line)}
+.brand{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.01em}
+.brand span{color:var(--accent)}
+.now{margin-left:auto;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 14px;max-width:62%;min-width:0}
+.now b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.dot.busy{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.dot.busy{animation:none}}
+main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
+@media (max-width:980px){main{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.monitor{background:#000;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;min-height:320px;position:relative;overflow:hidden}
+.monitor canvas{max-width:100%;max-height:62vh;display:block}
+.monitor .empty{color:var(--mute);text-align:center;padding:40px;max-width:420px}
+.thirds{position:absolute;pointer-events:none;inset:0;display:none}
+.thirds.on{display:block}
+#vid{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none}
+.transport{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tc{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--mute)}
+.strip{height:34px;width:100%;display:block;border-radius:6px;cursor:pointer;background:var(--panel)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{margin:0;font-family:var(--display);font-size:17px;font-weight:600;display:flex;align-items:center;gap:10px}
+.card h2 .n{font-family:var(--mono);font-size:12px;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:1px 6px}
+.card.off{opacity:.45}
+.card p{margin:0;color:var(--mute)}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--mute)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.w:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+label.opt{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+label.opt input{margin-top:3px;accent-color:var(--accent)}
+label.opt small{display:block;color:var(--mute)}
+select,input[type=number],textarea{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+textarea{width:100%;resize:vertical;min-height:64px}
+input[type=range]{accent-color:var(--accent);width:100%}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:18px;text-align:center;cursor:pointer;color:var(--mute)}
+.drop.over{border-color:var(--accent);color:var(--fg)}
+.bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--mute)}
+.chip.k{color:var(--fg);border-color:var(--accent)}
+.transcript{line-height:2;max-height:340px;overflow:auto;padding-right:6px}
+.w{cursor:pointer;border-radius:3px;padding:1px 1px}
+.w:hover{background:var(--panel2)}
+.w.cut{text-decoration:line-through;text-decoration-thickness:2px}
+.w.r-hes{color:var(--hes)} .w.r-mk{color:var(--mk)} .w.r-rep{color:var(--rep)} .w.r-rest{color:var(--rest)} .w.r-man{color:var(--man)}
+.w.forced{text-decoration:underline dotted var(--keep);text-decoration-thickness:2px}
+.w.now{background:#3a3326}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--mute)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{background:var(--panel2);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-family:var(--mono);font-size:18px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--mute)}
+.log{font-family:var(--mono);font-size:12px;color:var(--mute);max-height:160px;overflow:auto;white-space:pre-wrap}
+.note{font-size:12px;color:var(--mute)}
+.warn{color:#f0c27b}
+.err{color:var(--cut)}
+details summary{cursor:pointer;color:var(--mute)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:7px 12px;cursor:pointer;color:var(--mute)}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Decupa<span>.</span></div>
+  <div class="now" aria-live="polite"><span class="dot" id="dot"></span><b id="now">Etapa 1: escolha o vídeo</b></div>
+</header>
+
+<main>
+  <div class="col">
+    <div class="monitor" id="monitor">
+      <div class="empty" id="empty">Arraste o vídeo aqui ou use a etapa 1.<br>Nada sai do seu computador: o vídeo é processado no próprio navegador.</div>
+      <canvas id="cv" hidden></canvas>
+      <svg class="thirds" id="thirds" viewBox="0 0 3 3" preserveAspectRatio="none"><path d="M1 0V3M2 0V3M0 1H3M0 2H3" stroke="rgba(255,255,255,.35)" stroke-width=".01" fill="none" vector-effect="non-scaling-stroke"/></svg>
+      <video id="vid" playsinline preload="auto"></video>
+    </div>
+    <div class="transport">
+      <button class="btn" id="play" disabled>▶ Assistir editado</button>
+      <button class="btn" id="ab" disabled title="Segure para ver sem cor">Segure: antes</button>
+      <label class="opt" style="align-items:center"><input type="checkbox" id="gridT"> Grade dos terços</label>
+      <span class="tc" id="tc">00:00.0 / 00:00.0</span>
+    </div>
+    <canvas class="strip" id="strip" height="34"></canvas>
+
+    <div class="card" id="cardText">
+      <h2>Transcrição</h2>
+      <div class="legend">
+        <span><i style="background:var(--hes)"></i>Hesitação</span>
+        <span><i style="background:var(--mk)"></i>"né" e marcadores</span>
+        <span><i style="background:var(--rep)"></i>Repetição</span>
+        <span><i style="background:var(--rest)"></i>Enrolação / recomeço</span>
+        <span><i style="background:var(--man)"></i>Cortado por você</span>
+      </div>
+      <p class="note">Riscado = vai ser cortado. Clique numa palavra para cortar ou devolver.</p>
+      <div class="transcript" id="transcript"><p>A transcrição aparece aqui depois da etapa 2.</p></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <section class="card" id="c1">
+      <h2><span class="n">1</span>Vídeo</h2>
+      <div class="drop" id="drop" tabindex="0" role="button">Clique para escolher o vídeo (MP4 ou MOV)</div>
+      <input type="file" id="file" accept="video/*" hidden>
+      <p class="note" id="info"></p>
+    </section>
+
+    <section class="card off" id="c2">
+      <h2><span class="n">2</span>Ouvir e transcrever</h2>
+      <div class="row">
+        <div class="seg" id="qual"><button data-v="preciso" class="on">Mais preciso</button><button data-v="rapido">Mais rápido</button></div>
+      </div>
+      <p class="note">Na primeira vez o navegador baixa o modelo de fala (de 80 a 250 MB). Depois fica guardado.</p>
+      <button class="btn primary" id="go" disabled>Transcrever</button>
+      <div class="bar"><i id="pbar"></i></div>
+      <p class="note" id="pmsg"></p>
+    </section>
+
+    <section class="card off" id="c3">
+      <h2><span class="n">3</span>O que cortar</h2>
+      <textarea id="ask" placeholder="Ex.: tira as repetições e os né, deixa ela respirar, ritmo dinâmico"></textarea>
+      <div class="row"><button class="btn" id="applyAsk">Aplicar pedido</button></div>
+      <div class="chips" id="understood"></div>
+      <details open>
+        <summary>Regras ligadas</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <label class="opt"><input type="checkbox" id="oHes" checked><span>Hesitações<small>"ã", "hm", "éé", "ahn" soltos</small></span></label>
+          <label class="opt"><input type="checkbox" id="oMk" checked><span>"né" repetido<small>Corta o "né" colado em outro e os que voltam em menos de <input type="number" id="mkGap" value="20" min="0" max="120" style="width:58px;padding:2px 6px"> s</small></span></label>
+          <label class="opt"><input type="checkbox" id="oMkAll"><span>Cortar todos os "né"</span></label>
+          <label class="opt"><input type="checkbox" id="oTipo"><span>Também "tipo", "sabe", "assim"<small>Desligado: essas palavras muitas vezes têm sentido na frase</small></span></label>
+          <label class="opt"><input type="checkbox" id="oRep" checked><span>Repetições<small>"que que", "a a gente", frase dita duas vezes</small></span></label>
+          <label class="opt"><input type="checkbox" id="oRest" checked><span>Enrolação e recomeço<small>Começou a frase, travou e recomeçou: fica só a versão final</small></span></label>
+          <label class="opt"><input type="checkbox" id="oPause" checked><span>Pausas maiores que <input type="number" id="pauseMax" value="0.4" step="0.05" min="0.15" max="3" style="width:64px;padding:2px 6px"> s</span></label>
+          <label class="opt"><input type="checkbox" id="oBreath" checked><span>Deixar respiração natural<small>Mantém um respiro curto no fim das frases. Sem respiro a fala fica nervosa.</small></span></label>
+        </div>
+      </details>
+      <div class="stats">
+        <div class="stat"><b id="sOrig">—</b><span>original</span></div>
+        <div class="stat"><b id="sNew">—</b><span>editado</span></div>
+        <div class="stat"><b id="sCuts">—</b><span>cortes</span></div>
+      </div>
+    </section>
+
+    <section class="card off" id="c4">
+      <h2><span class="n">4</span>Cor</h2>
+      <p>Correção técnica sempre ligada (balanço de branco, exposição, preto e branco do quadro). Depois o color grading por cima.</p>
+      <div class="row">
+        <div class="seg" id="look"><button data-v="natural" class="on">Natural</button><button data-v="quente">Quente</button><button data-v="clean">Clean</button></div>
+      </div>
+      <label>Intensidade do grading <span class="tc" id="intV">70%</span><input type="range" id="intensity" min="0" max="100" value="70"></label>
+      <p class="note" id="colorInfo"></p>
+    </section>
+
+    <section class="card off" id="c5">
+      <h2><span class="n">5</span>Enquadramento</h2>
+      <div class="row">
+        <div class="seg" id="aspect"><button data-v="9:16" class="on">9:16 Reels</button><button data-v="4:5">4:5 Feed</button><button data-v="16:9">16:9</button><button data-v="orig">Original</button></div>
+      </div>
+      <label>Olhos na linha de cima dos terços; na horizontal:
+        <select id="thirdX"><option value="0.5">centro (fala para a câmera)</option><option value="0.333">terço esquerdo</option><option value="0.667">terço direito</option></select>
+      </label>
+      <label class="opt"><input type="checkbox" id="oZoom" checked><span>Zoom leve nos cortes<small>Alterna plano normal e fechado, só onde começa frase nova, para disfarçar o pulo do corte</small></span></label>
+      <label>Força do zoom <span class="tc" id="zoomV">12%</span><input type="range" id="zoomAmt" min="5" max="25" value="12"></label>
+      <p class="note" id="faceInfo">O rosto é encontrado sozinho. Se errar, clique nos olhos da pessoa no vídeo.</p>
+    </section>
+
+    <section class="card off" id="c6">
+      <h2><span class="n">6</span>Exportar</h2>
+      <div class="row">
+        <select id="res"><option value="1080">1080p</option><option value="720">720p (mais rápido)</option></select>
+        <label class="opt" style="align-items:center"><input type="checkbox" id="oNorm" checked> Nivelar volume da voz</label>
+      </div>
+      <button class="btn primary" id="exp" disabled>Exportar MP4</button>
+      <div class="bar"><i id="ebar"></i></div>
+      <p class="note" id="emsg"></p>
+      <div class="row" id="dl"></div>
+    </section>
+
+    <details class="card"><summary>Registro técnico</summary><div class="log" id="log"></div></details>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"></script>
+<script type="module">
+/* ============ estado ============ */
+const $=id=>document.getElementById(id);
+const S={file:null,url:null,dur:0,W:0,H:0,fps:30,audio:null,mono16:null,env:null,words:[],segs:[],
+  color:null,look:'natural',faces:[],manualEye:null,aspect:'9:16',qual:'preciso',playing:false,exporting:false};
+const LOOKS={
+  natural:{con:.12,sat:1.05,sh:[-.010,.004,.016],hi:[.016,.006,-.012],lift:.0},
+  quente:{con:.15,sat:1.07,sh:[.004,-.004,.010],hi:[.032,.012,-.022],lift:.0},
+  clean:{con:.07,sat:.98,sh:[-.006,.002,.010],hi:[.004,.004,.006],lift:.018}
+};
+const log=(...a)=>{const l=$('log');l.textContent+=a.join(' ')+'\n';l.scrollTop=1e9;console.log(...a)};
+const now=(t,busy)=>{$('now').textContent=t;$('dot').classList.toggle('busy',!!busy)};
+const fmt=s=>{s=Math.max(0,s||0);const m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+(s%60).toFixed(1).padStart(4,'0')};
+const enable=(id,on=true)=>$(id).classList.toggle('off',!on);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ============ 1. arquivo ============ */
+const drop=$('drop');
+drop.onclick=()=>$('file').click();
+drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')$('file').click()};
+$('file').onchange=e=>e.target.files[0]&&loadFile(e.target.files[0]);
+for(const el of [drop,$('monitor')]){
+  el.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});
+  el.addEventListener('dragleave',()=>drop.classList.remove('over'));
+  el.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];f&&loadFile(f)});
+}
+const vid=$('vid');
+function seek(t){return new Promise(res=>{const done=()=>{vid.removeEventListener('seeked',done);res()};vid.addEventListener('seeked',done);vid.currentTime=Math.min(Math.max(0,t),S.dur-0.001)})}
+
+async function loadFile(f){
+  if(S.exporting)return;
+  stop();
+  S.file=f;S.words=[];S.segs=[];S.faces=[];S.manualEye=null;S.color=null;
+  if(S.url)URL.revokeObjectURL(S.url);
+  S.url=URL.createObjectURL(f);vid.src=S.url;
+  now('Abrindo o vídeo…',true);
+  await new Promise((res,rej)=>{vid.onloadedmetadata=res;vid.onerror=()=>rej(new Error('O navegador não abriu esse arquivo. Exporte o vídeo em MP4 (H.264) e tente de novo.'))}).catch(e=>{now(e.message);throw e});
+  S.dur=vid.duration;S.W=vid.videoWidth;S.H=vid.videoHeight;
+  $('info').textContent=`${f.name} · ${S.W}×${S.H} · ${fmt(S.dur)} · ${(f.size/1048576).toFixed(0)} MB`;
+  $('empty').hidden=true;$('cv').hidden=false;
+  await seek(Math.min(1,S.dur/3));
+  S.fps=await measureFps();
+  log('fps estimado',S.fps.toFixed(2));
+  now('Lendo o áudio…',true);
+  try{await decodeAudio(f)}catch(e){log('áudio:',e.message);now('Não consegui ler o áudio desse arquivo. Tente um MP4 exportado do celular ou do CapCut.');return}
+  now('Analisando a cor e o rosto…',true);
+  await analyzeColor();
+  await findFaces();
+  renderFrame();
+  ['c2','c4','c5'].forEach(c=>enable(c));
+  $('go').disabled=false;$('play').disabled=false;$('ab').disabled=false;$('exp').disabled=false;enable('c6');
+  buildSegs();
+  now('Etapa 2: clique em Transcrever');
+}
+
+async function measureFps(){
+  if(!('requestVideoFrameCallback' in HTMLVideoElement.prototype))return 30;
+  vid.muted=true;
+  const times=[];
+  await new Promise(res=>{
+    const cb=(n,m)=>{times.push(m.mediaTime);if(times.length<14)vid.requestVideoFrameCallback(cb);else res()};
+    vid.requestVideoFrameCallback(cb);vid.play().catch(res);setTimeout(res,2500);
+  });
+  vid.pause();vid.muted=false;
+  const d=[];for(let i=1;i<times.length;i++){const x=times[i]-times[i-1];if(x>0.005&&x<0.2)d.push(x)}
+  if(!d.length)return 30;
+  d.sort((a,b)=>a-b);const fps=1/d[0];
+  const std=[23.976,24,25,29.97,30,50,59.94,60];
+  return std.reduce((a,b)=>Math.abs(b-fps)<Math.abs(a-fps)?b:a);
+}
+
+async function decodeAudio(f){
+  const buf=await f.arrayBuffer();
+  const ctx=new AudioContext({sampleRate:48000});
+  S.audio=await ctx.decodeAudioData(buf);ctx.close();
+  const len=Math.ceil(S.audio.duration*16000);
+  const off=new OfflineAudioContext(1,len,16000);
+  const src=off.createBufferSource();src.buffer=S.audio;src.connect(off.destination);src.start();
+  const r=await off.startRendering();
+  S.mono16=r.getChannelData(0);
+  // envelope de energia, janelas de 10 ms
+  const hop=160,n=Math.floor(S.mono16.length/hop),env=new Float32Array(n);
+  for(let i=0;i<n;i++){let s=0;for(let j=i*hop;j<(i+1)*hop;j++)s+=S.mono16[j]*S.mono16[j];env[i]=Math.sqrt(s/hop)}
+  S.env=env;
+  log('áudio',S.audio.sampleRate,'Hz',S.audio.numberOfChannels,'canais');
+}
+
+/* ============ 4. cor ============ */
+async function analyzeColor(){
+  const c=document.createElement('canvas');const w=192,h=Math.round(192*S.H/S.W);c.width=w;c.height=h;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  let R=0,G=0,B=0,N=0;const lum=[];
+  for(let k=0;k<8;k++){
+    await seek(S.dur*(k+.5)/8);x.drawImage(vid,0,0,w,h);
+    const d=x.getImageData(0,0,w,h).data;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255,l=.2126*r+.7152*g+.0722*b;
+      lum.push(l);
+      if(l>.08&&l<.92){R+=r;G+=g;B+=b;N++}
+    }
+  }
+  lum.sort((a,b)=>a-b);
+  const p=q=>lum[Math.floor(q*(lum.length-1))];
+  const mr=R/N,mg=G/N,mb=B/N,gray=(mr+mg+mb)/3;
+  const clampG=v=>Math.min(1.18,Math.max(.86,v));
+  // gray-world amortecido 55% (pele ocupa muito do quadro e puxaria demais para o azul)
+  const wb=[clampG(1+(gray/mr-1)*.55),clampG(1+(gray/mg-1)*.55),clampG(1+(gray/mb-1)*.55)];
+  const blk=Math.min(.10,Math.max(0,p(.005)-.005));
+  const wht=Math.max(.82,Math.min(1,p(.995)+.01));
+  const mid=Math.min(.95,Math.max(.05,(p(.5)-blk)/(wht-blk)));
+  const gam=Math.min(1.35,Math.max(.75,Math.log(.46)/Math.log(mid)));
+  S.color={wb,blk,wht,gam};
+  const cast=mr>mb*1.06?'puxado para o quente':mb>mr*1.06?'puxado para o frio':'neutro';
+  $('colorInfo').textContent=`Vídeo original: ${cast}, ${mid<.38?'escuro':mid>.6?'claro':'exposição ok'}. Correção aplicada automaticamente.`;
+  log('cor',JSON.stringify(S.color));
+}
+
+/* ============ 5. rosto ============ */
+let faceDet=null;
+async function getFaceDet(){
+  if(faceDet!==null)return faceDet;
+  try{
+    const V='0.10.14';
+    const m=await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${V}/vision_bundle.mjs`);
+    const fs=await m.FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${V}/wasm`);
+    faceDet=await m.FaceDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite'},runningMode:'IMAGE',minDetectionConfidence:.5});
+  }catch(e){log('detector de rosto indisponível:',e.message);faceDet=false}
+  return faceDet;
+}
+async function findFaces(){
+  const det=await getFaceDet();
+  S.faces=[];
+  if(!det){$('faceInfo').textContent='Não consegui carregar o detector de rosto. Clique nos olhos da pessoa no vídeo para enquadrar.';return}
+  const c=document.createElement('canvas');const sc=Math.min(1,640/S.W);c.width=Math.round(S.W*sc);c.height=Math.round(S.H*sc);
+  const x=c.getContext('2d');
+  const n=Math.min(48,Math.max(6,Math.ceil(S.dur/1.5)));
+  for(let k=0;k<n;k++){
+    const t=S.dur*(k+.5)/n;await seek(t);x.drawImage(vid,0,0,c.width,c.height);
+    try{
+      const r=det.detect(c);
+      if(r.detections.length){
+        const d=r.detections.sort((a,b)=>b.boundingBox.width*b.boundingBox.height-a.boundingBox.width*a.boundingBox.height)[0];
+        const bb=d.boundingBox;let ey,cx;
+        if(d.keypoints&&d.keypoints.length>=2){ey=(d.keypoints[0].y+d.keypoints[1].y)/2*S.H;cx=(d.keypoints[0].x+d.keypoints[1].x)/2*S.W}
+        else{ey=(bb.originY+bb.height*.4)/sc;cx=(bb.originX+bb.width/2)/sc}
+        S.faces.push({t,cx,ey,fh:bb.height/sc});
+      }
+    }catch(e){log('rosto',e.message)}
+  }
+  // suavização (mediana móvel de 3)
+  const med=(a,b,c)=>a+b+c-Math.max(a,b,c)-Math.min(a,b,c);
+  for(let i=1;i<S.faces.length-1;i++){const f=S.faces;f[i].cx2=med(f[i-1].cx,f[i].cx,f[i+1].cx);f[i].ey2=med(f[i-1].ey,f[i].ey,f[i+1].ey)}
+  S.faces.forEach(f=>{if(f.cx2!=null){f.cx=f.cx2;f.ey=f.ey2}});
+  $('faceInfo').textContent=S.faces.length?`Rosto encontrado em ${S.faces.length} de ${n} pontos do vídeo. Se o enquadramento errar, clique nos olhos da pessoa.`:'Não achei rosto. Clique nos olhos da pessoa no vídeo para enquadrar.';
+}
+function eyeAt(t){
+  if(S.manualEye)return S.manualEye;
+  const f=S.faces;if(!f.length)return {cx:S.W/2,ey:S.H*.4};
+  if(t<=f[0].t)return f[0];if(t>=f[f.length-1].t)return f[f.length-1];
+  for(let i=1;i<f.length;i++)if(f[i].t>=t){const a=f[i-1],b=f[i],k=(t-a.t)/(b.t-a.t);return {cx:a.cx+(b.cx-a.cx)*k,ey:a.ey+(b.ey-a.ey)*k}}
+  return f[0];
+}
+function outSize(){
+  const a=S.aspect==='orig'?S.W/S.H:S.aspect==='9:16'?9/16:S.aspect==='4:5'?4/5:16/9;
+  return a;
+}
+function cropFor(t,zoom){
+  const a=outSize();
+  let bw=S.W,bh=S.W/a;if(bh>S.H){bh=S.H;bw=S.H*a}
+  // zoom base mínimo de 6% para conseguir posicionar os olhos no terço quando o formato já bate
+  const base=(Math.abs(bw-S.W)<2&&Math.abs(bh-S.H)<2)?1.06:1;
+  const z=base*zoom,cw=bw/z,ch=bh/z;
+  const e=eyeAt(t),tx=+$('thirdX').value;
+  let x=e.cx-cw*tx,y=e.ey-ch/3;
+  x=Math.min(Math.max(0,x),S.W-cw);y=Math.min(Math.max(0,y),S.H-ch);
+  return {x,y,w:cw,h:ch};
+}
+$('cv').addEventListener('click',e=>{
+  if(!S.W)return;
+  const r=$('cv').getBoundingClientRect();
+  const u=(e.clientX-r.left)/r.width,v=(e.clientY-r.top)/r.height;
+  const c=cropFor(vid.currentTime,curZoom);
+  S.manualEye={cx:c.x+u*c.w,ey:c.y+v*c.h};
+  $('faceInfo').textContent='Enquadramento ajustado pelo seu clique (vale para o vídeo todo). Recarregue o vídeo para voltar ao automático.';
+  renderFrame();
+});
+
+/* ============ WebGL: cor + recorte ============ */
+const cv=$('cv');
+const gl=cv.getContext('webgl2',{preserveDrawingBuffer:true,premultipliedAlpha:false});
+const VS=`#version 300 es
+in vec2 p;out vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+const FS=`#version 300 es
+precision highp float;in vec2 v;out vec4 o;
+uniform sampler2D tex;uniform vec4 crop;uniform vec3 wb;uniform float blk,wht,gam,con,sat,inten,lift,bypass;uniform vec3 sh,hi;
+float L(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
+void main(){
+  vec2 uv=crop.xy+v*crop.zw;
+  vec3 s=texture(tex,uv).rgb;
+  if(bypass>.5){o=vec4(s,1);return;}
+  vec3 c=clamp((s*wb-blk)/(wht-blk),0.,1.);
+  c=pow(c,vec3(gam));
+  vec3 cc=c;
+  vec3 sc=c*c*(3.-2.*c);
+  c=mix(c,sc,con);
+  float l=L(c);
+  c+=sh*pow(1.-l,2.)+hi*l*l;
+  c=c*(1.-lift)+lift;
+  float y=L(c);float cb=(c.b-y)*.5389,cr=(c.r-y)*.6350;
+  float skin=smoothstep(.025,.0,abs(cr-.07))*smoothstep(.05,.0,abs(cb+.05));
+  float sa=mix(sat,1.+(sat-1.)*.3,skin);
+  c=mix(vec3(y),c,sa);
+  o=vec4(clamp(mix(cc,c,inten),0.,1.),1);
+}`;
+function sh_(t,src){const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}
+const prog=gl.createProgram();gl.attachShader(prog,sh_(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh_(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);gl.useProgram(prog);
+const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const ap=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(ap);gl.vertexAttribPointer(ap,2,gl.FLOAT,false,0,0);
+const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+[gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.LINEAR));
+[gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE));
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+const U=n=>gl.getUniformLocation(prog,n);
+let bypass=false,curZoom=1;
+function draw(crop,outW,outH){
+  if(cv.width!==outW||cv.height!==outH){cv.width=outW;cv.height=outH}
+  gl.viewport(0,0,outW,outH);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);
+  const C=S.color||{wb:[1,1,1],blk:0,wht:1,gam:1},Lk=LOOKS[S.look];
+  gl.uniform4f(U('crop'),crop.x/S.W,1-(crop.y+crop.h)/S.H,crop.w/S.W,crop.h/S.H);
+  gl.uniform3fv(U('wb'),C.wb);gl.uniform1f(U('blk'),C.blk);gl.uniform1f(U('wht'),C.wht);gl.uniform1f(U('gam'),C.gam);
+  gl.uniform1f(U('con'),Lk.con);gl.uniform1f(U('sat'),Lk.sat);gl.uniform3fv(U('sh'),Lk.sh);gl.uniform3fv(U('hi'),Lk.hi);gl.uniform1f(U('lift'),Lk.lift);
+  gl.uniform1f(U('inten'),$('intensity').value/100);gl.uniform1f(U('bypass'),bypass?1:0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+function previewSize(){const a=outSize();const h=Math.min(960,S.H);return [Math.round(h*a/2)*2,h]}
+function renderFrame(){
+  if(!S.W)return;
+  const seg=segAt(vid.currentTime);curZoom=seg?seg.zoom:1;
+  const [w,h]=previewSize();draw(cropFor(seg?seg.s:vid.currentTime,curZoom),w,h);
+  drawStrip();markWord();
+  $('tc').textContent=`${fmt(vid.currentTime)} / ${fmt(S.dur)}`;
+}
+
+/* ============ 2. transcrição (worker) ============ */
+const WORKER=`
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1';
+env.allowLocalModels=false;
+let asr=null,key='';
+self.onmessage=async e=>{
+  const {audio,cands}=e.data;let last;
+  for(const c of cands){
+    try{
+      const k=JSON.stringify(c);
+      if(k!==key){
+        asr=null;
+        self.postMessage({type:'status',msg:'Baixando o modelo '+c.id.split('/')[1]+' ('+c.device+')'});
+        asr=await pipeline('automatic-speech-recognition',c.id,{device:c.device,dtype:c.dtype,progress_callback:p=>self.postMessage({type:'progress',p})});
+        key=k;
+      }
+      self.postMessage({type:'status',msg:'Ouvindo e transcrevendo…',phase:'run'});
+      const out=await asr(audio,{language:'portuguese',task:'transcribe',return_timestamps:'word',chunk_length_s:30,stride_length_s:5});
+      self.postMessage({type:'done',chunks:out.chunks||[],text:out.text,model:c.id+' / '+c.device});return;
+    }catch(err){last=err;key='';self.postMessage({type:'warn',msg:c.id+' '+c.device+': '+(err&&err.message||err)});}
+  }
+  self.postMessage({type:'error',msg:String(last&&last.message||last)});
+};`;
+let worker=null;
+document.querySelectorAll('#qual button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#qual button').forEach(x=>x.classList.toggle('on',x===b));S.qual=b.dataset.v});
+$('go').onclick=transcribe;
+async function transcribe(){
+  if(!S.mono16)return;
+  $('go').disabled=true;now('Preparando o modelo de fala…',true);
+  let gpu=false;try{gpu=!!(navigator.gpu&&await navigator.gpu.requestAdapter())}catch{}
+  const sm=['onnx-community/whisper-small_timestamped','Xenova/whisper-small'],bs=['onnx-community/whisper-base_timestamped','Xenova/whisper-base'];
+  const ids=S.qual==='preciso'?[...sm,...bs]:[...bs,...sm];
+  const cands=[];
+  for(const id of ids){
+    if(gpu)cands.push({id,device:'webgpu',dtype:{encoder_model:'fp32',decoder_model_merged:'q4'}});
+    cands.push({id,device:'wasm',dtype:'q8'});
+  }
+  if(!worker)worker=new Worker(URL.createObjectURL(new Blob([WORKER],{type:'text/javascript'})),{type:'module'});
+  const files={};const t0=performance.now();let tick=null;
+  worker.onmessage=e=>{
+    const m=e.data;
+    if(m.type==='progress'&&m.p.status==='progress'&&m.p.total){files[m.p.file]=[m.p.loaded,m.p.total];let a=0,b=0;for(const k in files){a+=files[k][0];b+=files[k][1]}$('pbar').style.width=(a/b*70)+'%';$('pmsg').textContent=`Baixando modelo: ${(a/1048576).toFixed(0)} de ${(b/1048576).toFixed(0)} MB`}
+    else if(m.type==='status'){now(m.msg,true);if(m.phase==='run'){$('pmsg').textContent=m.msg;const ts=performance.now();clearInterval(tick);tick=setInterval(()=>{const el=(performance.now()-ts)/1000;$('pbar').style.width=Math.min(98,70+el/(S.dur*1.2)*28)+'%';$('pmsg').textContent=`Transcrevendo… ${el.toFixed(0)} s`},500)}}
+    else if(m.type==='warn')log('tentativa falhou →',m.msg);
+    else if(m.type==='error'){clearInterval(tick);now('A transcrição falhou. Veja o registro técnico no fim da página.');$('pmsg').innerHTML='<span class="err">Não consegui rodar o modelo de fala neste navegador. Use o Google Chrome atualizado.</span>';log('erro:',m.msg);$('go').disabled=false}
+    else if(m.type==='done'){clearInterval(tick);$('pbar').style.width='100%';log('modelo usado:',m.model,'·',((performance.now()-t0)/1000).toFixed(0),'s');$('pmsg').textContent=`Pronto em ${((performance.now()-t0)/1000).toFixed(0)} s.`;onWords(m.chunks);$('go').disabled=false}
+  };
+  const a=S.mono16.slice();worker.postMessage({audio:a,cands},[a.buffer]);
+}
+function onWords(chunks){
+  S.words=chunks.map(c=>{const raw=c.text.trim();let [s,e]=c.timestamp;if(e==null)e=s+.3;return {raw,s,e,norm:norm(raw),cut:null,manual:null}}).filter(w=>w.raw);
+  for(let i=0;i<S.words.length;i++){const w=S.words[i];if(w.e<=w.s)w.e=w.s+.08}
+  enable('c3');analyze();
+  now(`Etapa 3: confira os cortes (${S.segs.length?countCuts():0}) e assista`);
+}
+const norm=w=>w.toLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}]/gu,'');
+
+/* ============ 3. regras de corte ============ */
+const HES=/^(ã+|hã+|hm+|hum+|uhm*|uh+|ahn+|é{2,}|eh+|éh+|ehh+|aham|hmm+|ah{2,})$/;
+const SOFT_HES=new Set(['é','eh','ah','ã']);
+const REP_OK=new Set(['muito','não','sim','bem','bom','tá','já','isso','nunca']);
+function analyze(){
+  const W=S.words;W.forEach(w=>w.cut=null);
+  const o={hes:$('oHes').checked,mk:$('oMk').checked,mkAll:$('oMkAll').checked,tipo:$('oTipo').checked,rep:$('oRep').checked,rest:$('oRest').checked,mkGap:+$('mkGap').value};
+  // hesitações
+  if(o.hes)W.forEach((w,i)=>{
+    if(HES.test(w.norm)){w.cut='hes';return}
+    if(SOFT_HES.has(w.norm)){
+      const p=W[i-1],n=W[i+1];
+      const gapB=p?w.s-p.e:1,gapA=n?n.s-w.e:1;
+      const isoPunct=/[,…]|\.\.\./.test(w.raw)&&(!p||/[,….]$/.test(p.raw)||gapB>.2);
+      if(isoPunct||(gapB>.22&&gapA>.22))w.cut='hes';
+    }
+  });
+  // marcadores
+  const marks=new Set(['né',...(o.tipo?['tipo','sabe','assim']:[])]);
+  if(o.mk||o.mkAll){
+    let lastKept={};
+    W.forEach((w,i)=>{
+      if(w.cut||!marks.has(w.norm))return;
+      if(o.mkAll&&w.norm==='né'){w.cut='mk';return}
+      let j=i-1;while(j>=0&&W[j].cut)j--;
+      const glued=j>=0&&W[j].norm===w.norm&&w.s-W[j].e<1.2;
+      const recent=lastKept[w.norm]!=null&&w.s-lastKept[w.norm]<o.mkGap;
+      if(o.mk&&(glued||recent)){w.cut='mk';return}
+      if(o.tipo&&w.norm!=='né'&&/[,]$/.test(w.raw)&&(j<0||/[,.]$/.test(W[j].raw))){w.cut='mk';return}
+      lastKept[w.norm]=w.e;
+    });
+  }
+  // repetições e recomeços (sobre as palavras que sobraram)
+  const idx=W.map((w,i)=>i).filter(i=>!W[i].cut&&W[i].norm);
+  const T=idx.map(i=>W[i].norm);
+  const cutRange=(a,b,why)=>{for(let k=a;k<b;k++)if(!W[idx[k]].cut)W[idx[k]].cut=why};
+  for(let i=0;i<T.length;i++){
+    let done=false;
+    if(o.rep)for(let n=6;n>=1&&!done;n--){
+      if(i+2*n>T.length)continue;
+      let same=true;for(let k=0;k<n;k++)if(T[i+k]!==T[i+n+k]){same=false;break}
+      if(!same)continue;
+      if(n===1&&REP_OK.has(T[i]))continue;
+      if(W[idx[i+n]].s-W[idx[i]].s>8)continue;
+      cutRange(i,i+n,'rep');done=true;
+    }
+    if(o.rest&&!done)for(let n=5;n>=2&&!done;n--){
+      for(let gap=1;gap<=3&&!done;gap++){
+        const j=i+n+gap;if(j+n>T.length)continue;
+        let same=true;for(let k=0;k<n;k++)if(T[i+k]!==T[j+k]){same=false;break}
+        if(!same)continue;
+        if(W[idx[j]].s-W[idx[i]].s>7)continue;
+        cutRange(i,j,'rest');done=true;
+      }
+    }
+  }
+  // decisões manuais vencem
+  W.forEach(w=>{if(w.manual===true)w.cut=w.cut||'man';if(w.manual===false)w.cut=null});
+  buildSegs();renderTranscript();
+}
+const isCut=w=>!!w.cut;
+function snap(t,dir){
+  // procura o ponto de menor energia perto de t (±90 ms), pra não cortar no meio do som
+  if(!S.env)return t;
+  const c=Math.round(t*100),r=9;let best=c,bv=1e9;
+  for(let k=c-r;k<=c+r;k++){if(k<0||k>=S.env.length)continue;const v=S.env[k]+Math.abs(k-c)*.0004;if(v<bv){bv=v;best=k}}
+  return best/100+(dir>0?.005:0);
+}
+function buildSegs(){
+  const W=S.words;S.segs=[];
+  if(!W.length){S.segs=[{s:0,e:S.dur,zoom:1}];updateStats();return}
+  const pauses=$('oPause').checked,pmax=+$('pauseMax').value,breath=$('oBreath').checked;
+  const padB=.07,padA=breath?.2:.09;
+  let cur=null,prev=null,prevI=-1;
+  W.forEach((w,i)=>{
+    if(isCut(w))return;
+    const cutBetween=prev&&W.slice(prevI+1,i).some(isCut);
+    const gap=prev?w.s-prev.e:0;
+    if(cur&&!cutBetween&&(!pauses||gap<=pmax)){cur.e=w.e;cur.lastI=i}
+    else{
+      if(cur)S.segs.push(cur);
+      cur={s:w.s,e:w.e,firstI:i,lastI:i};
+    }
+    prev=w;prevI=i;
+  });
+  if(cur)S.segs.push(cur);
+  // margens e encaixe no silêncio
+  S.segs.forEach((g,k)=>{
+    const before=k?S.segs[k-1].e:0,after=k<S.segs.length-1?S.segs[k+1].s:S.dur;
+    const gb=g.s-before,ga=after-g.e;
+    g.s=snap(g.s-Math.min(padB,k?gb*.45:padB),-1);
+    g.e=snap(g.e+Math.min(padA,k<S.segs.length-1?ga*.45:padA),1);
+    g.s=Math.max(0,g.s);g.e=Math.min(S.dur,g.e);
+  });
+  for(let k=1;k<S.segs.length;k++)if(S.segs[k].s<S.segs[k-1].e){const m=(S.segs[k].s+S.segs[k-1].e)/2;S.segs[k-1].e=m;S.segs[k].s=m}
+  S.segs=S.segs.filter(g=>g.e-g.s>.12);
+  assignZoom();updateStats();drawStrip();
+}
+function assignZoom(){
+  const on=$('oZoom').checked,amt=1+$('zoomAmt').value/100;
+  let z=1,last=-99,acc=0;
+  S.segs.forEach((g,k)=>{
+    if(!on||!k){g.zoom=1;acc+=g.e-g.s;return}
+    const pw=S.words[S.segs[k-1].lastI],sentence=pw&&(/[.?!…]$/.test(pw.raw)||(S.words[g.firstI]&&S.words[g.firstI].s-pw.e>.7));
+    const since=acc-last;
+    if((sentence&&since>=2)||since>=6){z=z===1?amt:1;last=acc}
+    g.zoom=z;acc+=g.e-g.s;
+  });
+}
+function updateStats(){
+  const total=S.segs.reduce((a,g)=>a+g.e-g.s,0);
+  $('sOrig').textContent=fmt(S.dur);$('sNew').textContent=fmt(total);$('sCuts').textContent=S.words.length?countCuts():'—';
+}
+function countCuts(){return Math.max(0,S.segs.length-1)+(S.segs.length&&S.segs[0].s>.3?1:0)}
+function segAt(t){for(const g of S.segs)if(t>=g.s-1e-3&&t<g.e)return g;return null}
+
+/* transcrição na tela */
+const REASON={hes:'hesitação',mk:'"né"/marcador',rep:'repetição',rest:'enrolação/recomeço',man:'cortado por você'};
+function renderTranscript(){
+  const box=$('transcript');box.innerHTML='';
+  const fr=document.createDocumentFragment();
+  S.words.forEach((w,i)=>{
+    const sp=document.createElement('span');sp.className='w'+(w.cut?' cut r-'+w.cut:'')+(w.manual===false?' forced':'');
+    sp.textContent=w.raw;sp.dataset.i=i;sp.tabIndex=0;sp.title=(w.cut?'Cortado: '+REASON[w.cut]:'Mantido')+' · '+fmt(w.s);
+    fr.appendChild(sp);fr.appendChild(document.createTextNode(' '));
+  });
+  box.appendChild(fr);
+}
+$('transcript').addEventListener('click',e=>{
+  const sp=e.target.closest('.w');if(!sp)return;
+  const w=S.words[+sp.dataset.i];
+  w.manual=w.cut?false:true;analyze();
+  if(!S.playing){vid.currentTime=w.s;vid.addEventListener('seeked',renderFrame,{once:true})}
+});
+$('transcript').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.classList.contains('w'))e.target.click()});
+let lastMark=null;
+function markWord(){
+  if(!S.words.length)return;const t=vid.currentTime;
+  const i=S.words.findIndex(w=>t>=w.s&&t<w.e+.05);
+  if(lastMark)lastMark.classList.remove('now');
+  if(i>=0){lastMark=$('transcript').querySelector(`[data-i="${i}"]`);lastMark&&lastMark.classList.add('now')}
+}
+
+/* ============ linha do tempo ============ */
+const strip=$('strip');
+function drawStrip(){
+  if(!S.dur)return;
+  const w=strip.clientWidth*devicePixelRatio,h=34*devicePixelRatio;if(strip.width!==w){strip.width=w;strip.height=h}
+  const x=strip.getContext('2d');x.fillStyle='#2a1916';x.fillRect(0,0,w,h);
+  x.fillStyle='#5fb88a';S.segs.forEach(g=>x.fillRect(g.s/S.dur*w,h*.2,Math.max(1,(g.e-g.s)/S.dur*w),h*.6));
+  x.fillStyle='#f2a93b';x.fillRect(vid.currentTime/S.dur*w-1,0,2*devicePixelRatio,h);
+}
+strip.onclick=e=>{if(!S.dur||S.exporting)return;const r=strip.getBoundingClientRect();vid.currentTime=(e.clientX-r.left)/r.width*S.dur;vid.addEventListener('seeked',renderFrame,{once:true})};
+addEventListener('resize',drawStrip);
+
+/* ============ preview do editado ============ */
+$('play').onclick=()=>S.playing?stop():play();
+function play(){
+  if(!S.segs.length||S.exporting)return;
+  let g=segAt(vid.currentTime);
+  if(!g){g=S.segs.find(x=>x.s>vid.currentTime)||S.segs[0];vid.currentTime=g.s}
+  S.playing=true;$('play').textContent='❚❚ Pausar';vid.play();
+  const loop=()=>{
+    if(!S.playing)return;
+    const t=vid.currentTime,cur=segAt(t);
+    if(!cur){const nx=S.segs.find(x=>x.s>t-0.01);if(!nx){stop();vid.currentTime=S.segs[0].s;return}vid.currentTime=nx.s}
+    else if(t>=cur.e-0.025){const k=S.segs.indexOf(cur);const nx=S.segs[k+1];if(!nx){stop();return}vid.currentTime=nx.s}
+    renderFrame();
+    'requestVideoFrameCallback' in vid?vid.requestVideoFrameCallback(loop):requestAnimationFrame(loop);
+  };
+  'requestVideoFrameCallback' in vid?vid.requestVideoFrameCallback(loop):requestAnimationFrame(loop);
+}
+function stop(){S.playing=false;vid.pause();$('play').textContent='▶ Assistir editado'}
+const ab=$('ab');
+ab.addEventListener('pointerdown',()=>{bypass=true;renderFrame()});
+['pointerup','pointerleave'].forEach(ev=>ab.addEventListener(ev,()=>{if(bypass){bypass=false;renderFrame()}}));
+$('gridT').onchange=e=>$('thirds').classList.toggle('on',e.target.checked);
+function fitThirds(){const r=cv.getBoundingClientRect(),m=$('monitor').getBoundingClientRect(),t=$('thirds');Object.assign(t.style,{left:r.left-m.left+'px',top:r.top-m.top+'px',width:r.width+'px',height:r.height+'px',inset:'auto'})}
+new ResizeObserver(fitThirds).observe(cv);
+
+/* controles que mudam o resultado */
+['oHes','oMk','oMkAll','oTipo','oRep','oRest','mkGap'].forEach(id=>$(id).addEventListener('change',()=>S.words.length&&analyze()));
+['oPause','pauseMax','oBreath','oZoom','zoomAmt'].forEach(id=>$(id).addEventListener('input',()=>{buildSegs();renderFrame()}));
+$('zoomAmt').addEventListener('input',e=>$('zoomV').textContent=e.target.value+'%');
+$('intensity').addEventListener('input',e=>{$('intV').textContent=e.target.value+'%';renderFrame()});
+$('thirdX').onchange=renderFrame;
+const segBtns=(id,fn)=>document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));fn(b.dataset.v)});
+segBtns('look',v=>{S.look=v;renderFrame()});
+segBtns('aspect',v=>{S.aspect=v;renderFrame()});
+const setSeg=(id,v)=>document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+
+/* ============ pedido em texto ============ */
+$('applyAsk').onclick=()=>{
+  const t=$('ask').value.toLowerCase();const got=[];
+  const set=(id,v,label)=>{$(id).checked=v;got.push(label)};
+  if(/repeti/.test(t)){set('oRep',true,'cortar repetições');set('oRest',true,'cortar recomeços')}
+  if(/todos? os? n[ée]\b|nenhum n[ée]|tira(r)? (os|todos) n[ée]/.test(t))set('oMkAll',true,'cortar todos os "né"');
+  else if(/\bn[ée]s?\b/.test(t)){set('oMk',true,'reduzir os "né"')}
+  if(/\btipo\b|\bsabe\b|\bassim\b/.test(t))set('oTipo',true,'cortar "tipo/sabe/assim"');
+  if(/enrol|gaguej|trope[çc]|recome[çc]|errou|erro de fala|trava/.test(t)){set('oRest',true,'cortar enrolação');set('oHes',true,'cortar hesitações')}
+  if(/hesita|\bé+\b|\bã+\b|hum/.test(t))set('oHes',true,'cortar hesitações');
+  if(/pausa|sil[êe]ncio|buraco|espa[çc]o/.test(t))set('oPause',true,'cortar pausas');
+  if(/din[âa]mic|r[áa]pid|acelera|seco|sem respir/.test(t)){$('pauseMax').value=.25;got.push('ritmo rápido (pausas > 0,25 s)')}
+  if(/calm|tranquil|devagar|natural/.test(t)&&!/cor natural|natural de cor/.test(t)){$('pauseMax').value=.6;got.push('ritmo calmo (pausas > 0,6 s)')}
+  if(/sem respir|tira(r)? a respira/.test(t))set('oBreath',false,'sem respiro');
+  else if(/respir/.test(t))set('oBreath',true,'manter respiro');
+  if(/sem zoom/.test(t))set('oZoom',false,'sem zoom');else if(/zoom/.test(t))set('oZoom',true,'zoom nos cortes');
+  if(/reels|stories|vertical|9[:x]16|tiktok/.test(t)){S.aspect='9:16';setSeg('aspect','9:16');got.push('formato 9:16')}
+  if(/feed|4[:x]5/.test(t)){S.aspect='4:5';setSeg('aspect','4:5');got.push('formato 4:5')}
+  if(/youtube|horizontal|16[:x]9/.test(t)){S.aspect='16:9';setSeg('aspect','16:9');got.push('formato 16:9')}
+  if(/quente|aconcheg/.test(t)){S.look='quente';setSeg('look','quente');got.push('cor quente')}
+  if(/clean|cl[íi]nic|limp|claro/.test(t)){S.look='clean';setSeg('look','clean');got.push('cor clean')}
+  if(/cor natural|natural de cor/.test(t)){S.look='natural';setSeg('look','natural');got.push('cor natural')}
+  $('understood').innerHTML=got.length?got.map(g=>`<span class="chip k">${g}</span>`).join(''):'<span class="chip">Não entendi nenhum pedido. Use as caixas abaixo.</span>';
+  if(S.words.length)analyze();else{buildSegs()}
+  renderFrame();
+};
+
+/* ============ 6. exportar ============ */
+$('exp').onclick=exportMp4;
+async function pickVideoCfg(w,h,fps){
+  const br=w*h>1.5e6?12e6:6e6;
+  for(const codec of ['avc1.640033','avc1.640028','avc1.4d0028','avc1.42e01f']){
+    const cfg={codec,width:w,height:h,bitrate:br,framerate:fps,avc:{format:'avc'}};
+    try{if((await VideoEncoder.isConfigSupported(cfg)).supported)return cfg}catch{}
+  }
+  return null;
+}
+function buildAudio(norm){
+  const sr=S.audio.sampleRate,ch=Math.min(2,S.audio.numberOfChannels);
+  const total=S.segs.reduce((a,g)=>a+Math.round((g.e-g.s)*sr),0);
+  const out=[...Array(ch)].map(()=>new Float32Array(total));
+  const fade=Math.round(.008*sr);let pos=0;
+  S.segs.forEach(g=>{
+    const a=Math.round(g.s*sr),n=Math.round((g.e-g.s)*sr);
+    for(let c=0;c<ch;c++){
+      const src=S.audio.getChannelData(c),dst=out[c];
+      for(let i=0;i<n;i++){let v=src[a+i]||0;if(i<fade)v*=i/fade;else if(i>n-fade)v*=(n-i)/fade;dst[pos+i]=v}
+    }
+    pos+=n;
+  });
+  if(norm){
+    let peak=0,sum=0,cnt=0;
+    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>peak)peak=a;if(a>.01){sum+=a*a;cnt++}}}
+    const rms=Math.sqrt(sum/Math.max(1,cnt));
+    let g=Math.min(.126/Math.max(rms,1e-4),.89/Math.max(peak,1e-4));g=Math.min(g,6);
+    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){let v=d[i]*g;if(v>.89)v=.89+(v-.89)*.2;if(v<-.89)v=-.89+(v+.89)*.2;d[i]=Math.max(-.99,Math.min(.99,v))}}
+    log('ganho de voz',g.toFixed(2));
+  }
+  return {out,sr,ch,total};
+}
+async function exportMp4(){
+  if(!S.segs.length||S.exporting)return;
+  if(!('VideoEncoder' in window)){$('emsg').innerHTML='<span class="err">Este navegador não exporta vídeo. Use o Google Chrome atualizado.</span>';return}
+  stop();S.exporting=true;$('exp').disabled=true;$('dl').innerHTML='';
+  const t0=performance.now();
+  try{
+    const a=outSize(),maxH=+$('res').value;
+    // tamanho padrão da plataforma (lado menor = 1080 ou 720); se o recorte for bem menor, não aumenta mais que 25%
+    const sample=cropFor(0,1);
+    let Wd,H;
+    if(a<1){Wd=maxH;H=Math.round(maxH/a)}else{H=maxH;Wd=Math.round(maxH*a)}
+    const up=Wd/sample.w;
+    if(up>1.25){Wd=sample.w*1.25;H=Wd/a}
+    Wd=Math.round(Wd/2)*2;H=Math.round(H/2)*2;
+    const fps=S.fps;
+    const vcfg=await pickVideoCfg(Wd,H,fps);if(!vcfg)throw new Error('O codificador de vídeo H.264 não está disponível neste computador.');
+    now('Montando o áudio…',true);
+    const A=buildAudio($('oNorm').checked);
+    let acodec='aac',acfg={codec:'mp4a.40.2',sampleRate:A.sr,numberOfChannels:A.ch,bitrate:192000};
+    if(!(await AudioEncoder.isConfigSupported(acfg).catch(()=>({}))).supported){acodec='opus';acfg={codec:'opus',sampleRate:A.sr,numberOfChannels:A.ch,bitrate:160000}}
+    log('vídeo',vcfg.codec,Wd+'×'+H,fps+'fps · áudio',acodec);
+    S.audioWarn=acodec==='opus'?' Atenção: este computador não gerou áudio AAC; o arquivo toca no Chrome, mas o Instagram pode recusar. Se recusar, passe o vídeo pelo CapCut antes de postar.':'';
+    const muxer=new Mp4Muxer.Muxer({target:new Mp4Muxer.ArrayBufferTarget(),video:{codec:'avc',width:Wd,height:H,frameRate:fps},audio:{codec:acodec,numberOfChannels:A.ch,sampleRate:A.sr},fastStart:'in-memory',firstTimestampBehavior:'offset'});
+    let encErr=null;
+    const venc=new VideoEncoder({output:(c,m)=>muxer.addVideoChunk(c,m),error:e=>encErr=e});venc.configure(vcfg);
+    const aenc=new AudioEncoder({output:(c,m)=>muxer.addAudioChunk(c,m),error:e=>encErr=e});aenc.configure(acfg);
+    // áudio
+    const F=1024;
+    for(let i=0;i<A.total;i+=F){
+      const n=Math.min(F,A.total-i),buf=new Float32Array(n*A.ch);
+      for(let c=0;c<A.ch;c++)buf.set(A.out[c].subarray(i,i+n),c*n);
+      const ad=new AudioData({format:'f32-planar',sampleRate:A.sr,numberOfFrames:n,numberOfChannels:A.ch,timestamp:Math.round(i/A.sr*1e6),data:buf});
+      aenc.encode(ad);ad.close();
+    }
+    // vídeo, quadro a quadro
+    const total=S.segs.reduce((s,g)=>s+Math.max(1,Math.round((g.e-g.s)*fps)),0);
+    let fi=0;const dt=1/fps;vid.muted=true;
+    for(const g of S.segs){
+      const nf=Math.max(1,Math.round((g.e-g.s)*fps)),crop=cropFor(g.s,g.zoom);
+      for(let k=0;k<nf;k++){
+        if(encErr)throw encErr;
+        await seek(g.s+k*dt+dt*.25);
+        draw(crop,Wd,H);
+        const fr=new VideoFrame(cv,{timestamp:Math.round(fi*1e6/fps),duration:Math.round(1e6/fps)});
+        venc.encode(fr,{keyFrame:fi%Math.round(fps*2)===0});fr.close();fi++;
+        while(venc.encodeQueueSize>6)await sleep(4);
+        if(fi%6===0){const p=fi/total,el=(performance.now()-t0)/1000;$('ebar').style.width=(p*100)+'%';$('emsg').textContent=`Exportando ${Math.round(p*100)}% · faltam ~${Math.max(0,el/p-el).toFixed(0)} s`;now(`Exportando ${Math.round(p*100)}%`,true)}
+      }
+    }
+    await venc.flush();await aenc.flush();muxer.finalize();
+    if(encErr)throw encErr;
+    const blob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+    const name=S.file.name.replace(/\.[^.]+$/,'')+'-editado.mp4';
+    const url=URL.createObjectURL(blob);
+    const aEl=document.createElement('a');aEl.href=url;aEl.download=name;aEl.className='btn primary';aEl.textContent='Baixar '+name;
+    const rep=document.createElement('button');rep.className='btn';rep.textContent='Baixar lista de cortes';rep.onclick=()=>dlText(report(),name.replace('.mp4','-cortes.txt'));
+    $('dl').append(aEl,rep);aEl.click();
+    $('ebar').style.width='100%';$('emsg').textContent=`Pronto: ${fmt(A.total/A.sr)} de vídeo, ${(blob.size/1048576).toFixed(1)} MB, em ${((performance.now()-t0)/1000).toFixed(0)} s.${S.audioWarn}`;
+    now('Vídeo exportado. Confira na pasta Downloads.');
+  }catch(e){log('exportação:',e.message||e);$('emsg').innerHTML=`<span class="err">A exportação parou: ${e.message||e}</span>`;now('A exportação falhou. Veja a mensagem na etapa 6.')}
+  finally{S.exporting=false;$('exp').disabled=false;vid.muted=false;renderFrame()}
+}
+function report(){
+  const L=[`Decupa · ${S.file.name}`,`Original ${fmt(S.dur)} → editado ${fmt(S.segs.reduce((a,g)=>a+g.e-g.s,0))}`,'',
+    'PALAVRAS CORTADAS'];
+  S.words.forEach(w=>{if(w.cut)L.push(`${fmt(w.s)}  ${REASON[w.cut].padEnd(20)} ${w.raw}`)});
+  L.push('','TRECHOS MANTIDOS');S.segs.forEach((g,i)=>L.push(`${String(i+1).padStart(3)}  ${fmt(g.s)} → ${fmt(g.e)}  zoom ${Math.round((g.zoom-1)*100)}%`));
+  L.push('','TRANSCRIÇÃO EDITADA',S.words.filter(w=>!w.cut).map(w=>w.raw).join(' '));
+  return L.join('\n');
+}
+function dlText(t,n){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download=n;a.click()}
+
+window.__decupa=S; window.__decupaT={onWords,exportMp4,analyze}; // diagnóstico
+</script>
+</body>
+</html>
