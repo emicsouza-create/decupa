@@ -157,7 +157,7 @@ a{color:var(--accent)}
           <label class="opt"><input type="checkbox" id="oTipo"><span>Também "tipo", "sabe", "assim"<small>Desligado: essas palavras muitas vezes têm sentido na frase</small></span></label>
           <label class="opt"><input type="checkbox" id="oRep" checked><span>Repetições<small>"que que", "a a gente", frase dita duas vezes</small></span></label>
           <label class="opt"><input type="checkbox" id="oRest" checked><span>Enrolação e recomeço<small>Começou a frase, travou e recomeçou: fica só a versão final</small></span></label>
-          <label class="opt"><input type="checkbox" id="oPause" checked><span>Pausas maiores que <input type="number" id="pauseMax" value="0.4" step="0.05" min="0.15" max="3" style="width:64px;padding:2px 6px"> s</span></label>
+          <label class="opt"><input type="checkbox" id="oPause" checked><span>Silêncios e pausas maiores que <input type="number" id="pauseMax" value="0.4" step="0.05" min="0.15" max="3" style="width:64px;padding:2px 6px"> s<small>Corta pelo volume do áudio, mesmo onde a transcrição não marcou. Deixa um respiro curto em cada lado.</small></span></label>
           <label class="opt"><input type="checkbox" id="oBreath" checked><span>Deixar respiração natural<small>Mantém um respiro curto no fim das frases. Sem respiro a fala fica nervosa.</small></span></label>
         </div>
       </details>
@@ -577,11 +577,47 @@ function snap(t,dir){
   for(let k=c-r;k<=c+r;k++){if(k<0||k>=S.env.length)continue;const v=S.env[k]+Math.abs(k-c)*.0004;if(v<bv){bv=v;best=k}}
   return best/100+(dir>0?.005:0);
 }
+// Silêncios pelo volume do áudio: acha trechos abaixo do limiar por mais de pmax segundos.
+// Pega o que a transcrição deixa passar (palavra "esticada" sobre o silêncio) e funciona sem transcrição.
+function silences(pmax){
+  const E=S.env;if(!E||!E.length)return [];
+  const sorted=Float32Array.from(E).sort();
+  const floor=sorted[Math.floor(sorted.length*.1)],speech=sorted[Math.floor(sorted.length*.9)];
+  const thr=Math.max(floor*1.8,floor+(speech-floor)*.1,.003);
+  const out=[];let st=-1;
+  for(let i=0;i<=E.length;i++){
+    const quiet=i<E.length&&E[i]<thr;
+    if(quiet&&st<0)st=i;
+    if(!quiet&&st>=0){if((i-st)/100>pmax)out.push([st/100,i/100]);st=-1}
+  }
+  return out;
+}
+function splitBySilence(segs,pmax,padB,padA){
+  const sil=silences(pmax);if(!sil.length)return segs;
+  const res=[];
+  segs.forEach(g=>{
+    let cur={...g};
+    for(const [a,b] of sil){
+      if(b<=cur.s||a>=cur.e)continue;
+      const ca=a+padA,cb=b-padB; // mantém um respiro de cada lado
+      if(cb-ca<.1)continue;
+      if(ca>cur.s+.12)res.push({...cur,e:ca});
+      cur={...cur,s:Math.max(cur.s,cb),firstI:null};
+      if(cur.e-cur.s<.12){cur=null;break}
+    }
+    if(cur)res.push(cur);
+  });
+  return res;
+}
 function buildSegs(){
   const W=S.words;S.segs=[];
-  if(!W.length){S.segs=[{s:0,e:S.dur,zoom:1}];updateStats();return}
   const pauses=$('oPause').checked,pmax=+$('pauseMax').value,breath=$('oBreath').checked;
   const padB=.07,padA=breath?.2:.09;
+  if(!W.length){
+    S.segs=[{s:0,e:S.dur,zoom:1}];
+    if(pauses)S.segs=splitBySilence(S.segs,pmax,padB,padA);
+    assignZoom();updateStats();drawStrip();return;
+  }
   let cur=null,prev=null,prevI=-1;
   W.forEach((w,i)=>{
     if(isCut(w))return;
@@ -604,6 +640,7 @@ function buildSegs(){
     g.s=Math.max(0,g.s);g.e=Math.min(S.dur,g.e);
   });
   for(let k=1;k<S.segs.length;k++)if(S.segs[k].s<S.segs[k-1].e){const m=(S.segs[k].s+S.segs[k-1].e)/2;S.segs[k-1].e=m;S.segs[k].s=m}
+  if(pauses)S.segs=splitBySilence(S.segs,pmax,padB,padA);
   S.segs=S.segs.filter(g=>g.e-g.s>.12);
   assignZoom();updateStats();drawStrip();
 }
