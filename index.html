@@ -580,10 +580,13 @@ function draw(crop,outW,outH,opt={}){
   if(cv.width!==outW||cv.height!==outH){cv.width=outW;cv.height=outH}
   gl.viewport(0,0,outW,outH);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
-  if(hdrSafe()){
-    const w=Math.min(outW*1.5|0,Math.round(crop.w)),h=Math.min(outH*1.5|0,Math.round(crop.h));
-    if(src2d.width!==w||src2d.height!==h){src2d.width=w;src2d.height=h}
-    sx.drawImage(vid,crop.x,crop.y,crop.w,crop.h,0,0,w,h);
+  // Redução com filtro de alta qualidade direto no tamanho final (1:1 na GPU).
+  // Sem isso, tecido listrado/xadrez em vídeo 4K vira moiré (ondas) ao reduzir para 1080.
+  // Vale para todo vídeo; o HDR também passa por aqui (o Chrome converte sem estourar).
+  if(hdrSafe()||crop.w>outW*1.15||!S.hdr){
+    if(src2d.width!==outW||src2d.height!==outH){src2d.width=outW;src2d.height=outH}
+    sx.imageSmoothingEnabled=true;sx.imageSmoothingQuality='high';
+    sx.drawImage(vid,crop.x,crop.y,crop.w,crop.h,0,0,outW,outH);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src2d);
     gl.uniform4f(U('crop'),0,0,1,1);
   }else{
