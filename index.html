@@ -195,8 +195,18 @@ a{color:var(--accent)}
       <p class="note" id="colorInfo"></p>
     </section>
 
+    <section class="card off" id="cA">
+      <h2><span class="n">5</span>Áudio</h2>
+      <label class="opt"><input type="checkbox" id="oDen" checked><span>Tirar ruído com IA<small>DeepFilterNet3, modelo de limpeza de voz que roda no seu computador. Tira ar-condicionado, rua, zumbido e eco leve.</small></span></label>
+      <div class="seg" id="denLvl"><button data-v="12">Leve</button><button data-v="24" class="on">Média</button><button data-v="100">Forte</button></div>
+      <label class="opt"><input type="checkbox" id="oEnh" checked><span>Aprimorar voz<small>Corta grave embolado, dá presença e brilho na voz, comprime e deixa o volume no padrão das redes (cerca de -14 LUFS).</small></span></label>
+      <div class="row"><button class="btn" id="abAudio" disabled>▶ Ouvir antes / depois (8 s)</button></div>
+      <div class="bar"><i id="abar"></i></div>
+      <p class="note" id="amsg">Na primeira vez o navegador baixa o modelo de limpeza (34 MB). Depois fica guardado.</p>
+    </section>
+
     <section class="card off" id="c5">
-      <h2><span class="n">5</span>Enquadramento</h2>
+      <h2><span class="n">6</span>Enquadramento</h2>
       <div class="row">
         <div class="seg" id="aspect"><button data-v="9:16" class="on">9:16 Reels</button><button data-v="4:5">4:5 Feed</button><button data-v="16:9">16:9</button><button data-v="orig">Original</button></div>
       </div>
@@ -209,7 +219,7 @@ a{color:var(--accent)}
     </section>
 
     <section class="card off" id="c6">
-      <h2><span class="n">6</span>Exportar</h2>
+      <h2><span class="n">7</span>Exportar</h2>
       <div id="speedBox" style="display:flex;flex-direction:column;gap:8px">
         <b id="speedQ">Quer acelerar o vídeo?</b>
         <div class="seg" id="speed"><button data-v="1">Não</button><button data-v="1.05">1.05x</button><button data-v="1.1">1.1x</button><button data-v="1.15">1.15x</button><button data-v="1.2">1.2x</button></div>
@@ -217,7 +227,7 @@ a{color:var(--accent)}
       </div>
       <div class="row">
         <select id="res"><option value="1080">1080p</option><option value="720">720p (mais rápido)</option></select>
-        <label class="opt" style="align-items:center"><input type="checkbox" id="oNorm" checked> Nivelar volume da voz</label>
+
       </div>
       <button class="btn primary" id="exp" disabled>Exportar MP4</button>
       <div class="bar"><i id="ebar"></i></div>
@@ -277,7 +287,7 @@ async function loadFile(f){
   await analyzeColor();
   await findFaces();
   renderFrame();
-  ['c2','c4','c5'].forEach(c=>enable(c));
+  ['c2','c4','c5','cA'].forEach(c=>enable(c));$('abAudio').disabled=false;S.clean=null;S.cleanKey='';
   $('go').disabled=false;$('play').disabled=false;$('ab').disabled=false;$('exp').disabled=false;enable('c6');
   buildSegs();
   now('Etapa 2: clique em Transcrever');
@@ -931,6 +941,7 @@ const segBtns=(id,fn)=>document.querySelectorAll(`#${id} button`).forEach(b=>b.o
 segBtns('look',v=>{S.look=v;buildLut();renderFrame()});
 segBtns('aspect',v=>{S.aspect=v;renderFrame()});
 segBtns('trans',v=>{S.trans=v});
+segBtns('denLvl',()=>{S.cleanKey='';$('abar').style.width='0'});
 segBtns('speed',v=>{S.speed=+v;$('speedQ').textContent=S.speed===1?'Velocidade: normal':`Velocidade: ${String(S.speed).replace('.',',')}x`;$('speedBox').style.outline='';vid.playbackRate=S.speed;updateStats()});
 
 
@@ -994,10 +1005,77 @@ function timeStretch(chs,sr,rate){
   }
   return out.map(o=>{const r=o.subarray(0,outLen);for(let i=0;i<outLen;i++)if(wsum[i]>1e-3)r[i]/=wsum[i];return r});
 }
+/* ============ 5. áudio: limpeza com IA + tratamento de voz ============ */
+const DFW=`import {DeepFilter} from '${new URL('vendor/deepfilternet/index.js',location.href).href}';
+self.onmessage=async e=>{
+  const {x,lvl}=e.data;
+  try{
+    const df=await DeepFilter.create({attenuationLimit:lvl});const L=df.frameLength,D=3*L; // o modelo atrasa 3 blocos (30 ms)
+    const n=Math.ceil((x.length+D)/L),inp=new Float32Array(n*L);inp.set(x);
+    const out=new Float32Array(n*L);
+    for(let f=0;f<n;f++){out.set(df.process(inp.subarray(f*L,f*L+L)),f*L);if(f%300===0)self.postMessage({p:f/n})}
+    df.destroy();const res=out.slice(D,D+x.length);self.postMessage({done:res},[res.buffer]);
+  }catch(err){self.postMessage({err:String(err&&err.message||err)})}
+};`;
+function denoise(x,lvl,onP){
+  return new Promise((res,rej)=>{
+    const w=new Worker(URL.createObjectURL(new Blob([DFW],{type:'text/javascript'})),{type:'module'});
+    w.onmessage=e=>{const m=e.data;if(m.p!=null)onP&&onP(m.p);else if(m.done){w.terminate();res(m.done)}else if(m.err){w.terminate();rej(new Error(m.err))}};
+    w.onerror=e=>{w.terminate();rej(new Error(e.message||'falha ao carregar o modelo de limpeza'))};
+    const c=x.slice();w.postMessage({x:c,lvl},[c.buffer]);
+  });
+}
+async function voiceChain(x,sr){
+  // passa-alta 75 Hz, tira embolado em 260 Hz, presença em 3 kHz, brilho leve acima de 9,5 kHz, compressão 2,5:1
+  const ctx=new OfflineAudioContext(1,x.length,sr),b=ctx.createBuffer(1,x.length,sr);b.copyToChannel(x,0);
+  const src=ctx.createBufferSource();src.buffer=b;
+  const f=(type,freq,gain,Q)=>{const n=ctx.createBiquadFilter();n.type=type;n.frequency.value=freq;if(gain!=null)n.gain.value=gain;if(Q)n.Q.value=Q;return n};
+  const hp=f('highpass',75,null,.7),mud=f('peaking',260,-1.5,1.1),pres=f('peaking',3000,1.5,.8),air=f('highshelf',9500,1);
+  // ataque de 15 ms deixa passar o começo das consoantes (t, p, k), que dão clareza à fala
+  const comp=ctx.createDynamicsCompressor();comp.threshold.value=-20;comp.knee.value=10;comp.ratio.value=2.5;comp.attack.value=.015;comp.release.value=.2;
+  src.connect(hp).connect(mud).connect(pres).connect(air).connect(comp).connect(ctx.destination);src.start();
+  return (await ctx.startRendering()).getChannelData(0).slice();
+}
+const audioKey=()=>[$('oDen').checked,$('oEnh').checked,document.querySelector('#denLvl .on')?.dataset.v||24].join('|');
+async function prepareAudio(){
+  const key=audioKey();if(S.cleanKey===key)return;
+  const den=$('oDen').checked,enh=$('oEnh').checked,lvl=+(document.querySelector('#denLvl .on')?.dataset.v||24);
+  if(!den&&!enh){S.clean=null;S.cleanKey=key;return}
+  const sr=S.audio.sampleRate,n=S.audio.length,ch=S.audio.numberOfChannels;
+  let x=new Float32Array(n);for(let c=0;c<ch;c++){const d=S.audio.getChannelData(c);for(let i=0;i<n;i++)x[i]+=d[i]/ch}
+  const t0=performance.now();
+  if(den){
+    $('amsg').textContent='Limpando o ruído…';
+    try{x=await denoise(x,lvl,p=>{$('abar').style.width=(p*90)+'%';$('amsg').textContent=`Limpando o ruído… ${Math.round(p*100)}%`;now(`Limpando o áudio ${Math.round(p*100)}%`,true)})}
+    catch(e){log('limpeza de ruído:',e.message);$('amsg').innerHTML='<span class="err">Não consegui rodar a limpeza de ruído neste navegador. Use o Google Chrome atualizado.</span>';throw e}
+  }
+  if(enh)x=await voiceChain(x,sr);
+  S.clean=[x];S.cleanKey=key;$('abar').style.width='100%';
+  $('amsg').textContent=`Áudio pronto em ${((performance.now()-t0)/1000).toFixed(0)} s.`;
+  log('áudio tratado',key,((performance.now()-t0)/1000).toFixed(1)+' s');
+}
+let abSrc=null;
+$('abAudio').onclick=async()=>{
+  if(abSrc){try{abSrc.stop()}catch{};abSrc=null;$('abAudio').textContent='▶ Ouvir antes / depois (8 s)';return}
+  stop();$('abAudio').disabled=true;
+  try{await prepareAudio()}catch{ $('abAudio').disabled=false;return}
+  $('abAudio').disabled=false;
+  const sr=S.audio.sampleRate,t=Math.max(0,Math.min(vid.currentTime,S.dur-8)),a=Math.round(t*sr),n=Math.round(4*sr);
+  const ctx=new AudioContext({sampleRate:sr}),buf=ctx.createBuffer(1,2*n+Math.round(.4*sr),sr),d=buf.getChannelData(0);
+  const ch=S.audio.numberOfChannels;
+  for(let i=0;i<n;i++){let v=0;for(let c=0;c<ch;c++)v+=S.audio.getChannelData(c)[a+i]/ch;d[i]=v}
+  const cl=S.clean?S.clean[0]:null;const o=n+Math.round(.4*sr);
+  for(let i=0;i<n;i++)d[o+i]=cl?cl[a+i]:d[i];
+  abSrc=ctx.createBufferSource();abSrc.buffer=buf;abSrc.connect(ctx.destination);abSrc.start();
+  $('abAudio').textContent='■ Parar (4 s antes, depois 4 s tratado)';$('amsg').textContent='Tocando: primeiro o original, depois o tratado.';
+  abSrc.onended=()=>{abSrc=null;$('abAudio').textContent='▶ Ouvir antes / depois (8 s)';ctx.close()};
+};
+['oDen','oEnh'].forEach(id=>$(id).addEventListener('change',()=>{S.cleanKey='';$('abar').style.width='0'}));
+
 function buildAudio(norm){
   // Emenda com crossfade de potência constante (40 ms): o som ambiente não some no corte.
   // Cada trecho lê 20 ms a mais de cada lado do ponto de corte para sobrepor ao vizinho.
-  const sr=S.audio.sampleRate,ch=Math.min(2,S.audio.numberOfChannels);
+  const sr=S.audio.sampleRate,srcs=S.clean||[...Array(Math.min(2,S.audio.numberOfChannels))].map((_,c)=>S.audio.getChannelData(c)),ch=srcs.length;
   const total=S.segs.reduce((a,g)=>a+Math.round((g.e-g.s)*sr),0);
   const out=[...Array(ch)].map(()=>new Float32Array(total));
   const soft=S.trans!=='seca',X=Math.round((soft?.04:.008)*sr),half=X>>1;
@@ -1007,7 +1085,7 @@ function buildAudio(norm){
     const first=k===0,last=k===S.segs.length-1;
     const pre=first?0:half,post=last?0:half;
     for(let c=0;c<ch;c++){
-      const src=S.audio.getChannelData(c),dst=out[c];
+      const src=srcs[c],dst=out[c];
       for(let i=-pre;i<n+post;i++){
         const o=pos+i;if(o<0||o>=total)continue;
         let v=src[a+i]||0,w=1;
@@ -1020,11 +1098,16 @@ function buildAudio(norm){
     pos+=n;
   });
   if(norm){
-    let peak=0,sum=0,cnt=0;
-    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>peak)peak=a;if(a>.01){sum+=a*a;cnt++}}}
-    const rms=Math.sqrt(sum/Math.max(1,cnt));
-    let g=Math.min(.126/Math.max(rms,1e-4),.89/Math.max(peak,1e-4));g=Math.min(g,6);
-    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){let v=d[i]*g;if(v>.89)v=.89+(v-.89)*.2;if(v<-.89)v=-.89+(v+.89)*.2;d[i]=Math.max(-.99,Math.min(.99,v))}}
+    // volume da voz: média dos trechos falados até o alvo; limitador com 2 ms de antecipação segura os picos em -1 dB
+    const enh=$('oEnh').checked,target=enh?.22:.126;
+    let sum=0,cnt=0;
+    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>.01){sum+=a*a;cnt++}}}
+    const rms=Math.sqrt(sum/Math.max(1,cnt));const g=Math.min(8,target/Math.max(rms,1e-4));
+    const B=96,lim=.89,nb=Math.ceil(total/B),gb=new Float32Array(nb);
+    for(let k=0;k<nb;k++){let pk=0;for(let c=0;c<ch;c++){const d=out[c];for(let i=k*B;i<Math.min(total,(k+1)*B);i++){const a=Math.abs(d[i]*g);if(a>pk)pk=a}}gb[k]=pk>lim?lim/pk:1}
+    let cur=1;const rel=1-Math.exp(-B/(sr*.08));
+    for(let k=0;k<nb;k++){const want=Math.min(gb[k],k+1<nb?gb[k+1]:1);cur=want<cur?want:cur+(want-cur)*rel;gb[k]=cur}
+    for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<total;i++){const k=Math.floor(i/B);const v=d[i]*g*gb[k];d[i]=v>.99?.99:v<-.99?-.99:v}}
     log('ganho de voz',g.toFixed(2));
   }
   const rate=S.speed||1;
@@ -1048,8 +1131,9 @@ async function exportMp4(){
     Wd=Math.round(Wd/2)*2;H=Math.round(H/2)*2;
     const fps=S.fps;
     const vcfg=await pickVideoCfg(Wd,H,fps);if(!vcfg)throw new Error('O codificador de vídeo H.264 não está disponível neste computador.');
+    await prepareAudio();
     now('Montando o áudio…',true);
-    const A=buildAudio($('oNorm').checked);
+    const A=buildAudio(true);
     let acodec='aac',acfg={codec:'mp4a.40.2',sampleRate:A.sr,numberOfChannels:A.ch,bitrate:192000};
     if(!(await AudioEncoder.isConfigSupported(acfg).catch(()=>({}))).supported){acodec='opus';acfg={codec:'opus',sampleRate:A.sr,numberOfChannels:A.ch,bitrate:160000}}
     log('vídeo',vcfg.codec,Wd+'×'+H,fps+'fps · áudio',acodec);
