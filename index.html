@@ -170,11 +170,25 @@ a{color:var(--accent)}
 
     <section class="card off" id="c4">
       <h2><span class="n">4</span>Cor</h2>
-      <p>Correção técnica sempre ligada (balanço de branco, exposição, preto e branco do quadro). Depois o color grading por cima.</p>
+      <p>O Decupa lê o vídeo e corrige sozinho: branco, exposição, contraste, curva, realces, sombras e cor de pele (HSL). Depois aplica o grading.</p>
+      <div class="chips" id="colorRead"><span class="chip">A leitura aparece quando o vídeo abrir.</span></div>
+      <label class="opt" id="hdrRow" hidden><input type="checkbox" id="oHdr" checked><span>Vídeo HDR (iPhone): converter sem estourar<small id="hdrInfo">Deixe ligado. Desligado, o HDR chega estourado no editor.</small></span></label>
       <div class="row">
         <div class="seg" id="look"><button data-v="natural" class="on">Natural</button><button data-v="quente">Quente</button><button data-v="clean">Clean</button></div>
       </div>
-      <label>Intensidade do grading <span class="tc" id="intV">70%</span><input type="range" id="intensity" min="0" max="100" value="70"></label>
+      <label>Intensidade do grading <span class="tc" id="intV">60%</span><input type="range" id="intensity" min="0" max="100" value="60"></label>
+      <details>
+        <summary>Ajuste fino (opcional)</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          <label>Exposição <span class="tc" id="fExpV">0</span><input type="range" id="fExp" min="-50" max="50" value="0"></label>
+          <label>Contraste <span class="tc" id="fConV">0</span><input type="range" id="fCon" min="-50" max="50" value="0"></label>
+          <label>Saturação <span class="tc" id="fSatV">0</span><input type="range" id="fSat" min="-50" max="50" value="0"></label>
+          <label>Temperatura (frio ↔ quente) <span class="tc" id="fTmpV">0</span><input type="range" id="fTmp" min="-50" max="50" value="0"></label>
+          <label>Realces (recuperar estouro) <span class="tc" id="fHiV">0</span><input type="range" id="fHi" min="-50" max="50" value="0"></label>
+          <label>Sombras (abrir escuro) <span class="tc" id="fShV">0</span><input type="range" id="fSh" min="-50" max="50" value="0"></label>
+          <button class="btn" id="fReset" type="button">Zerar ajuste fino</button>
+        </div>
+      </details>
       <p class="note" id="colorInfo"></p>
     </section>
 
@@ -193,6 +207,11 @@ a{color:var(--accent)}
 
     <section class="card off" id="c6">
       <h2><span class="n">6</span>Exportar</h2>
+      <div id="speedBox" style="display:flex;flex-direction:column;gap:8px">
+        <b id="speedQ">Quer acelerar o vídeo?</b>
+        <div class="seg" id="speed"><button data-v="1">Não</button><button data-v="1.05">1.05x</button><button data-v="1.1">1.1x</button><button data-v="1.15">1.15x</button><button data-v="1.2">1.2x</button></div>
+        <p class="note">A voz continua no tom normal, só fica mais rápida. 1.1x deixa a fala mais dinâmica sem parecer acelerada.</p>
+      </div>
       <div class="row">
         <select id="res"><option value="1080">1080p</option><option value="720">720p (mais rápido)</option></select>
         <label class="opt" style="align-items:center"><input type="checkbox" id="oNorm" checked> Nivelar volume da voz</label>
@@ -213,11 +232,6 @@ a{color:var(--accent)}
 const $=id=>document.getElementById(id);
 const S={file:null,url:null,dur:0,W:0,H:0,fps:30,audio:null,mono16:null,env:null,words:[],segs:[],
   color:null,look:'natural',faces:[],manualEye:null,aspect:'9:16',qual:'preciso',playing:false,exporting:false};
-const LOOKS={
-  natural:{con:.12,sat:1.05,sh:[-.010,.004,.016],hi:[.016,.006,-.012],lift:.0},
-  quente:{con:.15,sat:1.07,sh:[.004,-.004,.010],hi:[.032,.012,-.022],lift:.0},
-  clean:{con:.07,sat:.98,sh:[-.006,.002,.010],hi:[.004,.004,.006],lift:.018}
-};
 const log=(...a)=>{const l=$('log');l.textContent+=a.join(' ')+'\n';l.scrollTop=1e9;console.log(...a)};
 const now=(t,busy)=>{$('now').textContent=t;$('dot').classList.toggle('busy',!!busy)};
 const fmt=s=>{s=Math.max(0,s||0);const m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+(s%60).toFixed(1).padStart(4,'0')};
@@ -240,7 +254,7 @@ function seek(t){return new Promise(res=>{const done=()=>{vid.removeEventListene
 async function loadFile(f){
   if(S.exporting)return;
   stop();
-  S.file=f;S.words=[];S.segs=[];S.faces=[];S.manualEye=null;S.color=null;
+  S.file=f;S.words=[];S.segs=[];S.faces=[];S.manualEye=null;S.color=null;S.speed=null;setSeg('speed',null);
   if(S.url)URL.revokeObjectURL(S.url);
   S.url=URL.createObjectURL(f);vid.src=S.url;
   now('Abrindo o vídeo…',true);
@@ -254,6 +268,9 @@ async function loadFile(f){
   now('Lendo o áudio…',true);
   try{await decodeAudio(f)}catch(e){log('áudio:',e.message);now('Não consegui ler o áudio desse arquivo. Tente um MP4 exportado do celular ou do CapCut.');return}
   now('Analisando a cor e o rosto…',true);
+  S.hdr=await detectHdr(f).catch(()=>null);
+  $('hdrRow').hidden=!S.hdr;$('oHdr').checked=!!S.hdr;
+  if(S.hdr)$('hdrInfo').textContent=`Detectei vídeo ${S.hdr==='hlg'?'HDR HLG (iPhone)':'HDR PQ'}. Convertido para o padrão das redes (SDR) sem estourar os claros, antes da correção.`;
   await analyzeColor();
   await findFaces();
   renderFrame();
@@ -296,33 +313,168 @@ async function decodeAudio(f){
 }
 
 /* ============ 4. cor ============ */
-async function analyzeColor(){
-  const c=document.createElement('canvas');const w=192,h=Math.round(192*S.H/S.W);c.width=w;c.height=h;
-  const x=c.getContext('2d',{willReadFrequently:true});
-  let R=0,G=0,B=0,N=0;const lum=[];
-  for(let k=0;k<8;k++){
-    await seek(S.dur*(k+.5)/8);x.drawImage(vid,0,0,w,h);
-    const d=x.getImageData(0,0,w,h).data;
-    for(let i=0;i<d.length;i+=4){
-      const r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255,l=.2126*r+.7152*g+.0722*b;
-      lum.push(l);
-      if(l>.08&&l<.92){R+=r;G+=g;B+=b;N++}
+// Motor de cor: lê os quadros e monta uma LUT 3D (33³) com correção + grading.
+// Correção (sempre 100%): branco, exposição em luz linear, ombro de realces, pontos de preto/branco,
+// curva de contraste, sombras, HSL (tom e saturação da pele, vibrance no resto). Grading por cima, com intensidade.
+const srgb2lin=c=>c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4);
+const lin2srgb=c=>c<=0?0:c<=.0031308?c*12.92:1.055*Math.pow(c,1/2.4)-.055;
+const cl01=v=>v<0?0:v>1?1:v;
+const lum=(r,g,b)=>.2126*r+.7152*g+.0722*b;
+function rgb2hsl(r,g,b){const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;let h=0,s=0;if(mx!==mn){const d=mx-mn;s=l>.5?d/(2-mx-mn):d/(mx+mn);h=mx===r?((g-b)/d+(g<b?6:0)):mx===g?(b-r)/d+2:(r-g)/d+4;h*=60}return [h,s,l]}
+function hsl2rgb(h,s,l){if(s<=0)return [l,l,l];const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;const f=t=>{t=((t%360)+360)%360/360;if(t<1/6)return p+(q-p)*6*t;if(t<.5)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p};return [f(h+120),f(h),f(h-120)]}
+function isSkin(r,g,b){const R=r*255,G=g*255,B=b*255,y=.299*R+.587*G+.114*B,cb=128-.168736*R-.331264*G+.5*B,cr=128+.5*R-.418688*G-.081312*B;return y>40&&y<240&&cb>=77&&cb<=127&&cr>=135&&cr<=178&&R>G&&G>=B*.8}
+const hueDist=(a,b)=>{let d=((a-b)%360+540)%360-180;return d};
+const LOOKS={
+  natural:{con:.04,sat:1.02,sh:[-.006,.002,.010],hi:[.010,.004,-.008],lift:0,skinWarm:0},
+  quente:{con:.06,sat:1.04,sh:[.004,-.002,.002],hi:[.022,.008,-.018],lift:0,skinWarm:2},
+  clean:{con:-.02,sat:.97,sh:[-.002,.002,.006],hi:[.000,.002,.006],lift:.012,skinWarm:-1}
+};
+const FINE=['fExp','fCon','fSat','fTmp','fHi','fSh'];
+const fine=id=>+$(id).value/50;
+
+// HDR: lê a caixa 'colr' (nclx) do arquivo para saber se é HLG ou PQ
+async function detectHdr(f){
+  const parts=[f.slice(0,Math.min(f.size,4e6))];if(f.size>4e6)parts.push(f.slice(f.size-4e6));
+  for(const p of parts){
+    const b=new Uint8Array(await p.arrayBuffer());
+    for(let i=0;i<b.length-18;i++){
+      if(b[i]===99&&b[i+1]===111&&b[i+2]===108&&b[i+3]===114&&b[i+4]===110&&b[i+5]===99&&b[i+6]===108&&b[i+7]===120){
+        const tr=(b[i+10]<<8)|b[i+11];
+        if(tr===18)return 'hlg';if(tr===16)return 'pq';return null;
+      }
     }
   }
-  lum.sort((a,b)=>a-b);
-  const p=q=>lum[Math.floor(q*(lum.length-1))];
-  const mr=R/N,mg=G/N,mb=B/N,gray=(mr+mg+mb)/3;
-  const clampG=v=>Math.min(1.18,Math.max(.86,v));
-  // gray-world amortecido 55% (pele ocupa muito do quadro e puxaria demais para o azul)
-  const wb=[clampG(1+(gray/mr-1)*.55),clampG(1+(gray/mg-1)*.55),clampG(1+(gray/mb-1)*.55)];
-  const blk=Math.min(.10,Math.max(0,p(.005)-.005));
-  const wht=Math.max(.82,Math.min(1,p(.995)+.01));
-  const mid=Math.min(.95,Math.max(.05,(p(.5)-blk)/(wht-blk)));
-  const gam=Math.min(1.35,Math.max(.75,Math.log(.46)/Math.log(mid)));
-  S.color={wb,blk,wht,gam};
-  const cast=mr>mb*1.06?'puxado para o quente':mb>mr*1.06?'puxado para o frio':'neutro';
-  $('colorInfo').textContent=`Vídeo original: ${cast}, ${mid<.38?'escuro':mid>.6?'claro':'exposição ok'}. Correção aplicada automaticamente.`;
-  log('cor',JSON.stringify(S.color));
+  return null;
+}
+
+// lê quadros pelo mesmo caminho da GPU (com a conversão HDR, sem LUT)
+async function samplePixels(n){
+  const w=256,h=Math.max(16,Math.round(256*S.H/S.W)),px=[];
+  for(let k=0;k<n;k++){
+    await seek(S.dur*(k+.5)/n);
+    draw({x:0,y:0,w:S.W,h:S.H},w,h,{raw:true});
+    const d=new Uint8Array(w*h*4);gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,d);
+    for(let i=0;i<d.length;i+=8)px.push(d[i]/255,d[i+1]/255,d[i+2]/255);
+  }
+  return px;
+}
+const pct=(arr,q)=>arr[Math.floor(q*(arr.length-1))];
+async function analyzeColor(){
+  const px=await samplePixels(12),N=px.length/3;
+  // 1) branco
+  let nr=0,ng=0,nb=0,nn=0,sr=0,sg=0,sb=0,sn=0,ar=0,ag=0,ab=0;
+  for(let i=0;i<px.length;i+=3){
+    const r=px[i],g=px[i+1],b=px[i+2],R=srgb2lin(r),G=srgb2lin(g),B=srgb2lin(b);
+    ar+=R;ag+=G;ab+=B;
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;
+    if(isSkin(r,g,b)){sr+=R;sg+=G;sb+=B;sn++}
+    else if(l>.28&&l<.95&&(mx-mn)/(mx+.001)<.14){nr+=R;ng+=G;nb+=B;nn++}
+  }
+  let gain=[1,1,1],wbFrom='';
+  if(nn>N*.015){const y=lum(nr,ng,nb);gain=[y/nr,y/ng,y/nb].map(v=>1+(v-1)*.85);wbFrom='áreas neutras'}
+  else if(sn>N*.01){gain=[1,1+((.57*sr)/sg-1)*.35,1+((.39*sr)/sb-1)*.5];wbFrom='tom de pele'}
+  else{const y=lum(ar,ag,ab);gain=[y/ar,y/ag,y/ab].map(v=>1+(v-1)*.35);wbFrom='média do quadro'}
+  gain=gain.map(v=>Math.min(1.22,Math.max(.82,v)));
+  const gy=lum(...gain);gain=gain.map(v=>v/gy);
+  // 2) exposição (luz linear), medida na pele quando existe
+  const L=[],SL=[];
+  for(let i=0;i<px.length;i+=3){
+    const R=srgb2lin(px[i])*gain[0],G=srgb2lin(px[i+1])*gain[1],B=srgb2lin(px[i+2])*gain[2];
+    const l=lin2srgb(lum(R,G,B));L.push(l);if(isSkin(px[i],px[i+1],px[i+2]))SL.push(l);
+  }
+  L.sort((a,b)=>a-b);SL.sort((a,b)=>a-b);
+  const useSkin=SL.length>N*.01,mid=useSkin?pct(SL,.5):pct(L,.5),target=useSkin?.60:.46;
+  let exp=srgb2lin(target)/Math.max(.002,srgb2lin(Math.max(.02,mid)));exp=Math.min(1.9,Math.max(.6,exp));
+  // 3) depois da exposição: realces estourados, sombras, espalhamento (contraste)
+  const L2=L.map(l=>lin2srgb(Math.min(1,srgb2lin(l)*exp)));
+  const hiFrac=L2.filter(v=>v>.95).length/L2.length;
+  const blk=Math.min(.07,Math.max(0,pct(L2,.003)-.004));
+  const top=pct(L2,.998),wht=top>.985?1:Math.max(.86,top+.01);
+  const nrm=v=>cl01((v-blk)/(wht-blk));
+  const p5=nrm(pct(L2,.05)),p10=nrm(pct(L2,.10)),p95=nrm(pct(L2,.95));
+  const spread=p95-p5;
+  const con=Math.min(.32,Math.max(-.15,(.78-spread)*1.3));
+  const hiRec=Math.min(.6,hiFrac*5);
+  const shLift=Math.min(.06,Math.max(0,(.05-p10)*1.5));
+  // 4) saturação e pele (HSL)
+  let ms=0,mc=0,ss=0,sc=0,hx=0,hy=0;
+  for(let i=0;i<px.length;i+=6){
+    const [h,s,l]=rgb2hsl(px[i],px[i+1],px[i+2]);if(l<.12||l>.9)continue;
+    if(isSkin(px[i],px[i+1],px[i+2])){ss+=s;sc++;hx+=Math.cos(h*Math.PI/180);hy+=Math.sin(h*Math.PI/180)}else{ms+=s;mc++}
+  }
+  ms=mc?ms/mc:.3;ss=sc?ss/sc:.4;
+  const skinHue=sc?((Math.atan2(hy,hx)*180/Math.PI)+360)%360:25;
+  const vib=Math.min(.4,Math.max(-.25,(.30-ms)*1.6));
+  const skinSat=sc?Math.min(1.12,Math.max(.85,1+(.42/Math.max(.05,ss)-1)*.5)):1;
+  const hueShift=sc?Math.max(-7,Math.min(7,hueDist(24,skinHue)))*.7:0;
+  S.color={gain,exp,blk,wht,con,hiRec,shLift,vib,skinSat,skinHue,hueShift,hasSkin:sc>0};
+  log('cor',JSON.stringify(S.color,(k,v)=>typeof v==='number'?+v.toFixed(3):v));
+  // leitura para a tela
+  const chip=t=>`<span class="chip k">${t}</span>`,ch=[];
+  const cast=gain[2]>1.04?'puxava para o amarelo':gain[2]<.96?'puxava para o azul':gain[1]>1.04?'puxava para o magenta':gain[1]<.96?'puxava para o verde':'já estava neutro';
+  ch.push(chip(`Branco: ${cast} (lido pelo ${wbFrom})`));
+  const st=Math.log2(exp);ch.push(chip(`Exposição: ${Math.abs(st)<.1?'ok':(st>0?'+':'')+st.toFixed(1).replace('.',',')+' stop'}`));
+  ch.push(chip(`Contraste: ${con>.08?'estava lavado, aumentei':con<-.05?'estava duro, suavizei':'ok'}`));
+  if(hiRec>.05)ch.push(chip('Realces: segurei o estouro'));
+  if(shLift>.01)ch.push(chip('Sombras: abri o escuro'));
+  ch.push(chip(`Saturação: ${vib>.05?'estava apagada, aumentei':vib<-.05?'estava forte, reduzi':'ok'}`));
+  if(sc)ch.push(chip(`Pele: ${Math.abs(hueShift)>1.5?(hueShift>0?'tirei o vermelho':'tirei o amarelo'):'tom natural'}`));
+  $('colorRead').innerHTML=ch.join('');
+  buildLut();
+}
+
+// função de cor completa para um pixel (entrada já convertida do HDR, sRGB 0-1)
+function colorFn(r,g,b,C,Lk,t){
+  const tmp=fine('fTmp'),expF=Math.pow(2,fine('fExp')*.8);
+  let R=srgb2lin(r)*C.gain[0]*(1+tmp*.06),G=srgb2lin(g)*C.gain[1],B=srgb2lin(b)*C.gain[2]*(1-tmp*.06);
+  const e=C.exp*expF;R*=e;G*=e;B*=e;
+  // ombro dos realces em luz linear (segura o estouro)
+  const hr=Math.min(.9,Math.max(0,C.hiRec+fine('fHi')*.5)),knee=.62-.3*hr;
+  let Y=lum(R,G,B);
+  if(Y>knee){const Yn=knee+(1-knee)*(1-Math.exp(-(Y-knee)/(1-knee)));const k=Yn/Y;R*=k;G*=k;B*=k;Y=Yn}
+  let c=[lin2srgb(R),lin2srgb(G),lin2srgb(B)].map(v=>(v-C.blk)/(C.wht-C.blk));
+  // curva no brilho, preservando o tom
+  let l=Math.max(1e-4,lum(...c));
+  const con=C.con+fine('fCon')*.25+Lk.con*t,sh=Math.max(0,C.shLift+fine('fSh')*.06);
+  let l2=l+sh*Math.pow(Math.max(0,1-l),3);
+  const s=l2<.5?2*l2*l2:1-2*(1-l2)*(1-l2);
+  l2=cl01(l2+con*(s-l2));
+  c=c.map(v=>v*l2/l);
+  const mx=Math.max(...c);if(mx>1){const k=(mx-1)/mx;c=c.map(v=>v/mx*(1-k*.3)+l2*k*.3)}
+  c=c.map(cl01);
+  // HSL: pele x resto
+  let [h,sa,li]=rgb2hsl(...c);
+  const dh=Math.abs(hueDist(h,C.skinHue));
+  const wSkin=C.hasSkin?Math.max(0,1-dh/28)*cl01((sa-.08)/.15)*cl01((li-.08)/.12)*(1-cl01((li-.85)/.12)):0;
+  h+=(C.hueShift+Lk.skinWarm*t)*wSkin;
+  const sOther=sa*(1+C.vib*(1-sa)),sSkin=sa*C.skinSat;
+  sa=(sOther*(1-wSkin)+sSkin*wSkin)*(1+fine('fSat')*.35);
+  sa=cl01(sa*(1+(Lk.sat-1)*t*(1-wSkin*.6)));
+  c=hsl2rgb(h,sa,li);
+  // grading criativo (split-tone leve + lift)
+  const L3=lum(...c);
+  c=c.map((v,i)=>v+(Lk.sh[i]*Math.pow(1-L3,2)+Lk.hi[i]*L3*L3)*t);
+  c=c.map(v=>v*(1-Lk.lift*t)+Lk.lift*t);
+  return c.map(cl01);
+}
+const LUTN=33;let lutTex=null;
+function buildLut(){
+  if(!S.color)return;
+  const C=S.color,Lk=LOOKS[S.look],t=$('intensity').value/100,n=LUTN,data=new Uint8Array(n*n*n*4);
+  let o=0;
+  for(let bi=0;bi<n;bi++)for(let gi=0;gi<n;gi++)for(let ri=0;ri<n;ri++){
+    const c=colorFn(ri/(n-1),gi/(n-1),bi/(n-1),C,Lk,t);
+    data[o++]=Math.round(c[0]*255);data[o++]=Math.round(c[1]*255);data[o++]=Math.round(c[2]*255);data[o++]=255;
+  }
+  gl.activeTexture(gl.TEXTURE1);
+  if(!lutTex){lutTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_3D,lutTex);
+    [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.LINEAR));
+    [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T,gl.TEXTURE_WRAP_R].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.CLAMP_TO_EDGE));}
+  else gl.bindTexture(gl.TEXTURE_3D,lutTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,n,n,n,0,gl.RGBA,gl.UNSIGNED_BYTE,data);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.activeTexture(gl.TEXTURE0);
 }
 
 /* ============ 5. rosto ============ */
@@ -401,26 +553,13 @@ const gl=cv.getContext('webgl2',{preserveDrawingBuffer:true,premultipliedAlpha:f
 const VS=`#version 300 es
 in vec2 p;out vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0,1);}`;
 const FS=`#version 300 es
-precision highp float;in vec2 v;out vec4 o;
-uniform sampler2D tex;uniform vec4 crop;uniform vec3 wb;uniform float blk,wht,gam,con,sat,inten,lift,bypass;uniform vec3 sh,hi;
-float L(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
+precision highp float;precision highp sampler3D;in vec2 v;out vec4 o;
+uniform sampler2D tex;uniform sampler3D lut;uniform vec4 crop;uniform float useLut,lutN;
 void main(){
   vec2 uv=crop.xy+v*crop.zw;
   vec3 s=texture(tex,uv).rgb;
-  if(bypass>.5){o=vec4(s,1);return;}
-  vec3 c=clamp((s*wb-blk)/(wht-blk),0.,1.);
-  c=pow(c,vec3(gam));
-  vec3 cc=c;
-  vec3 sc=c*c*(3.-2.*c);
-  c=mix(c,sc,con);
-  float l=L(c);
-  c+=sh*pow(1.-l,2.)+hi*l*l;
-  c=c*(1.-lift)+lift;
-  float y=L(c);float cb=(c.b-y)*.5389,cr=(c.r-y)*.6350;
-  float skin=smoothstep(.025,.0,abs(cr-.07))*smoothstep(.05,.0,abs(cb+.05));
-  float sa=mix(sat,1.+(sat-1.)*.3,skin);
-  c=mix(vec3(y),c,sa);
-  o=vec4(clamp(mix(cc,c,inten),0.,1.),1);
+  if(useLut>.5){vec3 q=s*((lutN-1.)/lutN)+.5/lutN;s=texture(lut,q).rgb;}
+  o=vec4(s,1);
 }`;
 function sh_(t,src){const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}
 const prog=gl.createProgram();gl.attachShader(prog,sh_(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh_(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);gl.useProgram(prog);
@@ -431,16 +570,27 @@ const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
 [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE));
 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
 const U=n=>gl.getUniformLocation(prog,n);
+gl.uniform1i(U('tex'),0);gl.uniform1i(U('lut'),1);gl.uniform1f(U('lutN'),33);
 let bypass=false,curZoom=1;
-function draw(crop,outW,outH){
+// HDR (iPhone): pela GPU o Chrome entrega o quadro estourado (medido: 5% do quadro em 255).
+// Pelo canvas 2D o Chrome faz o tone mapping para SDR sem estourar. Então HDR passa pelo 2D antes.
+const hdrSafe=()=>!!S.hdr&&$('oHdr').checked;
+const src2d=document.createElement('canvas');const sx=src2d.getContext('2d',{willReadFrequently:false});
+function draw(crop,outW,outH,opt={}){
   if(cv.width!==outW||cv.height!==outH){cv.width=outW;cv.height=outH}
   gl.viewport(0,0,outW,outH);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);
-  const C=S.color||{wb:[1,1,1],blk:0,wht:1,gam:1},Lk=LOOKS[S.look];
-  gl.uniform4f(U('crop'),crop.x/S.W,1-(crop.y+crop.h)/S.H,crop.w/S.W,crop.h/S.H);
-  gl.uniform3fv(U('wb'),C.wb);gl.uniform1f(U('blk'),C.blk);gl.uniform1f(U('wht'),C.wht);gl.uniform1f(U('gam'),C.gam);
-  gl.uniform1f(U('con'),Lk.con);gl.uniform1f(U('sat'),Lk.sat);gl.uniform3fv(U('sh'),Lk.sh);gl.uniform3fv(U('hi'),Lk.hi);gl.uniform1f(U('lift'),Lk.lift);
-  gl.uniform1f(U('inten'),$('intensity').value/100);gl.uniform1f(U('bypass'),bypass?1:0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+  if(hdrSafe()){
+    const w=Math.min(outW*1.5|0,Math.round(crop.w)),h=Math.min(outH*1.5|0,Math.round(crop.h));
+    if(src2d.width!==w||src2d.height!==h){src2d.width=w;src2d.height=h}
+    sx.drawImage(vid,crop.x,crop.y,crop.w,crop.h,0,0,w,h);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src2d);
+    gl.uniform4f(U('crop'),0,0,1,1);
+  }else{
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);
+    gl.uniform4f(U('crop'),crop.x/S.W,1-(crop.y+crop.h)/S.H,crop.w/S.W,crop.h/S.H);
+  }
+  gl.uniform1f(U('useLut'),!opt.raw&&!bypass&&lutTex&&S.color?1:0);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 function previewSize(){const a=outSize();const h=Math.min(960,S.H);return [Math.round(h*a/2)*2,h]}
@@ -656,7 +806,7 @@ function assignZoom(){
   });
 }
 function updateStats(){
-  const total=S.segs.reduce((a,g)=>a+g.e-g.s,0);
+  const total=S.segs.reduce((a,g)=>a+g.e-g.s,0)/(S.speed||1);
   $('sOrig').textContent=fmt(S.dur);$('sNew').textContent=fmt(total);$('sCuts').textContent=S.words.length?countCuts():'—';
 }
 function countCuts(){return Math.max(0,S.segs.length-1)+(S.segs.length&&S.segs[0].s>.3?1:0)}
@@ -707,7 +857,7 @@ function play(){
   if(!S.segs.length||S.exporting)return;
   let g=segAt(vid.currentTime);
   if(!g){g=S.segs.find(x=>x.s>vid.currentTime)||S.segs[0];vid.currentTime=g.s}
-  S.playing=true;$('play').textContent='❚❚ Pausar';vid.play();
+  S.playing=true;$('play').textContent='❚❚ Pausar';vid.preservesPitch=true;vid.playbackRate=S.speed||1;vid.play();
   const loop=()=>{
     if(!S.playing)return;
     const t=vid.currentTime,cur=segAt(t);
@@ -730,12 +880,17 @@ new ResizeObserver(fitThirds).observe(cv);
 ['oHes','oMk','oMkAll','oTipo','oRep','oRest','mkGap'].forEach(id=>$(id).addEventListener('change',()=>S.words.length&&analyze()));
 ['oPause','pauseMax','oBreath','oZoom','zoomAmt'].forEach(id=>$(id).addEventListener('input',()=>{buildSegs();renderFrame()}));
 $('zoomAmt').addEventListener('input',e=>$('zoomV').textContent=e.target.value+'%');
-$('intensity').addEventListener('input',e=>{$('intV').textContent=e.target.value+'%';renderFrame()});
+$('intensity').addEventListener('input',e=>{$('intV').textContent=e.target.value+'%';buildLut();renderFrame()});
+FINE.forEach(id=>$(id).addEventListener('input',e=>{$(id+'V').textContent=(e.target.value>0?'+':'')+e.target.value;buildLut();renderFrame()}));
+$('fReset').onclick=()=>{FINE.forEach(id=>{$(id).value=0;$(id+'V').textContent='0'});buildLut();renderFrame()};
+$('oHdr').addEventListener('change',async()=>{if(!S.W)return;now('Relendo as cores…',true);const t=vid.currentTime;await analyzeColor();await seek(t);renderFrame();now('Cores atualizadas')});
 $('thirdX').onchange=renderFrame;
+const setSeg=(id,v)=>document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',v!=null&&x.dataset.v===String(v)));
 const segBtns=(id,fn)=>document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));fn(b.dataset.v)});
-segBtns('look',v=>{S.look=v;renderFrame()});
+segBtns('look',v=>{S.look=v;buildLut();renderFrame()});
 segBtns('aspect',v=>{S.aspect=v;renderFrame()});
-const setSeg=(id,v)=>document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+segBtns('speed',v=>{S.speed=+v;$('speedQ').textContent=S.speed===1?'Velocidade: normal':`Velocidade: ${String(S.speed).replace('.',',')}x`;$('speedBox').style.outline='';vid.playbackRate=S.speed;updateStats()});
+
 
 /* ============ pedido em texto ============ */
 $('applyAsk').onclick=()=>{
@@ -774,6 +929,29 @@ async function pickVideoCfg(w,h,fps){
   }
   return null;
 }
+// Acelera a fala sem mudar o tom (WSOLA: janelas de 40 ms, busca do melhor encaixe ±12 ms)
+function timeStretch(chs,sr,rate){
+  if(rate===1)return chs;
+  const N=Math.round(sr*.04),Hs=N>>1,tol=Math.round(sr*.012),D=8;
+  const inLen=chs[0].length,outLen=Math.floor(inLen/rate);
+  const mono=chs.length>1?chs[0].map((v,i)=>(v+chs[1][i])*.5):chs[0];
+  const win=new Float32Array(N);for(let i=0;i<N;i++)win[i]=.5-.5*Math.cos(2*Math.PI*i/N);
+  const out=chs.map(()=>new Float32Array(outLen+N)),wsum=new Float32Array(outLen+N);
+  let prev=0;
+  for(let k=0;k*Hs<outLen;k++){
+    const op=k*Hs,nom=Math.round(op*rate);let best=Math.min(nom,inLen-N-1);
+    if(k>0){
+      const tgt=prev+Hs;let bc=-Infinity;
+      const scan=(from,to,step)=>{for(let p=from;p<=to;p+=step){if(p<0||p+N>=inLen||tgt+N>=inLen)continue;let c=0;for(let i=0;i<N;i+=D)c+=mono[p+i]*mono[tgt+i];if(c>bc){bc=c;best=p}}};
+      scan(nom-tol,nom+tol,D);const b0=best;scan(b0-D,b0+D,1);
+    }
+    if(best<0)best=0;if(best+N>=inLen)break;
+    for(let c=0;c<chs.length;c++){const s=chs[c],o=out[c];for(let i=0;i<N;i++)o[op+i]+=s[best+i]*win[i]}
+    for(let i=0;i<N;i++)wsum[op+i]+=win[i];
+    prev=best;
+  }
+  return out.map(o=>{const r=o.subarray(0,outLen);for(let i=0;i<outLen;i++)if(wsum[i]>1e-3)r[i]/=wsum[i];return r});
+}
 function buildAudio(norm){
   const sr=S.audio.sampleRate,ch=Math.min(2,S.audio.numberOfChannels);
   const total=S.segs.reduce((a,g)=>a+Math.round((g.e-g.s)*sr),0);
@@ -795,10 +973,13 @@ function buildAudio(norm){
     for(let c=0;c<ch;c++){const d=out[c];for(let i=0;i<d.length;i++){let v=d[i]*g;if(v>.89)v=.89+(v-.89)*.2;if(v<-.89)v=-.89+(v+.89)*.2;d[i]=Math.max(-.99,Math.min(.99,v))}}
     log('ganho de voz',g.toFixed(2));
   }
+  const rate=S.speed||1;
+  if(rate!==1){const st=timeStretch(out,sr,rate);return {out:st,sr,ch,total:st[0].length}}
   return {out,sr,ch,total};
 }
 async function exportMp4(){
   if(!S.segs.length||S.exporting)return;
+  if(S.speed==null){$('speedBox').style.outline='2px solid var(--accent)';$('speedBox').style.outlineOffset='6px';$('speedBox').scrollIntoView({behavior:'smooth',block:'center'});$('emsg').textContent='Antes de exportar: escolha se quer acelerar o vídeo (ou "Não").';now('Escolha a velocidade na etapa 6');return}
   if(!('VideoEncoder' in window)){$('emsg').innerHTML='<span class="err">Este navegador não exporta vídeo. Use o Google Chrome atualizado.</span>';return}
   stop();S.exporting=true;$('exp').disabled=true;$('dl').innerHTML='';
   const t0=performance.now();
@@ -832,13 +1013,13 @@ async function exportMp4(){
       aenc.encode(ad);ad.close();
     }
     // vídeo, quadro a quadro
-    const total=S.segs.reduce((s,g)=>s+Math.max(1,Math.round((g.e-g.s)*fps)),0);
+    const rate=S.speed||1;const total=S.segs.reduce((s,g)=>s+Math.max(1,Math.round((g.e-g.s)/rate*fps)),0);
     let fi=0;const dt=1/fps;vid.muted=true;
     for(const g of S.segs){
-      const nf=Math.max(1,Math.round((g.e-g.s)*fps)),crop=cropFor(g.s,g.zoom);
+      const nf=Math.max(1,Math.round((g.e-g.s)/rate*fps)),crop=cropFor(g.s,g.zoom);
       for(let k=0;k<nf;k++){
         if(encErr)throw encErr;
-        await seek(g.s+k*dt+dt*.25);
+        await seek(g.s+(k+.25)*dt*rate);
         draw(crop,Wd,H);
         const fr=new VideoFrame(cv,{timestamp:Math.round(fi*1e6/fps),duration:Math.round(1e6/fps)});
         venc.encode(fr,{keyFrame:fi%Math.round(fps*2)===0});fr.close();fi++;
@@ -860,7 +1041,7 @@ async function exportMp4(){
   finally{S.exporting=false;$('exp').disabled=false;vid.muted=false;renderFrame()}
 }
 function report(){
-  const L=[`Decupa · ${S.file.name}`,`Original ${fmt(S.dur)} → editado ${fmt(S.segs.reduce((a,g)=>a+g.e-g.s,0))}`,'',
+  const L=[`Decupa · ${S.file.name}`,`Original ${fmt(S.dur)} → editado ${fmt(S.segs.reduce((a,g)=>a+g.e-g.s,0)/(S.speed||1))} · velocidade ${S.speed||1}x`,'',
     'PALAVRAS CORTADAS'];
   S.words.forEach(w=>{if(w.cut)L.push(`${fmt(w.s)}  ${REASON[w.cut].padEnd(20)} ${w.raw}`)});
   L.push('','TRECHOS MANTIDOS');S.segs.forEach((g,i)=>L.push(`${String(i+1).padStart(3)}  ${fmt(g.s)} → ${fmt(g.e)}  zoom ${Math.round((g.zoom-1)*100)}%`));
